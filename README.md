@@ -11,6 +11,9 @@ Drizzle ORM, Neon Postgres, Tailwind CSS, and shadcn-style UI primitives.
 - Task CRUD, complete/reopen, trash, restore, and permanent delete.
 - Fixed items, reminders, memos, and day-based Gantt chart.
 - Cloud database persistence through `DATABASE_URL`.
+- Automatic database initialization on first app database access. The app creates
+  the required tables/indexes when they are missing, so deployment does not depend
+  on a manual migration command.
 
 ## Local Setup
 
@@ -39,13 +42,12 @@ runtime or install pnpm normally in your shell.
    - `ADMIN_PASSWORD_HASH`
    - `SESSION_SECRET`
    - `NEXT_PUBLIC_APP_NAME`
-4. Run migrations against the production database:
+4. Deploy to Vercel. The production URL becomes the fixed public login link.
 
-```bash
-pnpm db:migrate
-```
-
-5. Deploy to Vercel. The production URL becomes the fixed public login link.
+The app will automatically create `tasks`, `fixed_items`, `reminders`, and
+`memos` on first authenticated database access if they do not already exist.
+`pnpm db:migrate` remains available for explicit schema management, but it is not
+required for first deployment.
 
 ## Useful Commands
 

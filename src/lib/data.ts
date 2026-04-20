@@ -60,7 +60,7 @@ function searchValue(value?: string) {
 }
 
 export async function listTasks(filters: TaskFilters = {}) {
-  const db = getDb();
+  const db = await getDb();
   const clauses: SQL[] = [];
 
   if (filters.status) clauses.push(eq(tasks.status, filters.status));
@@ -94,7 +94,7 @@ export async function listTasks(filters: TaskFilters = {}) {
 
 export async function getTaskById(id?: string | null) {
   if (!id) return null;
-  const db = getDb();
+  const db = await getDb();
   const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   return task ?? null;
 }
@@ -107,7 +107,7 @@ export async function createTask(input: {
   priority: Priority;
   notes: string;
 }) {
-  const db = getDb();
+  const db = await getDb();
   const [task] = await db
     .insert(tasks)
     .values({
@@ -129,7 +129,7 @@ export async function updateTask(
     notes: string;
   },
 ) {
-  const db = getDb();
+  const db = await getDb();
   const [task] = await db
     .update(tasks)
     .set({
@@ -143,7 +143,7 @@ export async function updateTask(
 }
 
 export async function completeTask(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db
     .update(tasks)
     .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
@@ -151,7 +151,7 @@ export async function completeTask(id: string) {
 }
 
 export async function reopenTask(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db
     .update(tasks)
     .set({ status: "todo", completedAt: null, updatedAt: new Date() })
@@ -159,7 +159,7 @@ export async function reopenTask(id: string) {
 }
 
 export async function moveTaskToTrash(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db
     .update(tasks)
     .set({ status: "trashed", trashedAt: new Date(), updatedAt: new Date() })
@@ -167,7 +167,7 @@ export async function moveTaskToTrash(id: string) {
 }
 
 export async function restoreTask(id: string) {
-  const db = getDb();
+  const db = await getDb();
   const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   await db
     .update(tasks)
@@ -180,12 +180,12 @@ export async function restoreTask(id: string) {
 }
 
 export async function permanentlyDeleteTask(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db.delete(tasks).where(eq(tasks.id, id));
 }
 
 export async function listFixedItems(filters: FixedFilters = {}) {
-  const db = getDb();
+  const db = await getDb();
   const query = searchValue(filters.search);
   const clauses = compact<SQL>([
     filters.category?.trim() ? eq(fixedItems.category, filters.category.trim()) : null,
@@ -207,7 +207,7 @@ export async function listFixedItems(filters: FixedFilters = {}) {
 
 export async function getFixedItemById(id?: string | null) {
   if (!id) return null;
-  const db = getDb();
+  const db = await getDb();
   const [item] = await db.select().from(fixedItems).where(eq(fixedItems.id, id)).limit(1);
   return item ?? null;
 }
@@ -216,7 +216,7 @@ export async function upsertFixedItem(
   input: Omit<FixedItem, "id" | "createdAt" | "updatedAt">,
   id?: string,
 ) {
-  const db = getDb();
+  const db = await getDb();
   if (id) {
     const [item] = await db
       .update(fixedItems)
@@ -231,17 +231,17 @@ export async function upsertFixedItem(
 }
 
 export async function deleteFixedItem(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db.delete(fixedItems).where(eq(fixedItems.id, id));
 }
 
 export async function toggleFixedPinned(id: string, pinned: boolean) {
-  const db = getDb();
+  const db = await getDb();
   await db.update(fixedItems).set({ pinned, updatedAt: new Date() }).where(eq(fixedItems.id, id));
 }
 
 export async function toggleFixedDashboard(id: string, showOnDashboard: boolean) {
-  const db = getDb();
+  const db = await getDb();
   await db
     .update(fixedItems)
     .set({ showOnDashboard, updatedAt: new Date() })
@@ -249,7 +249,7 @@ export async function toggleFixedDashboard(id: string, showOnDashboard: boolean)
 }
 
 export async function listReminders(filters: ReminderFilters = {}) {
-  const db = getDb();
+  const db = await getDb();
   const query = searchValue(filters.search);
   const clauses = compact<SQL>([
     filters.date ? eq(reminders.reminderDate, filters.date) : null,
@@ -269,7 +269,7 @@ export async function listReminders(filters: ReminderFilters = {}) {
 
 export async function getReminderById(id?: string | null) {
   if (!id) return null;
-  const db = getDb();
+  const db = await getDb();
   const [reminder] = await db.select().from(reminders).where(eq(reminders.id, id)).limit(1);
   return reminder ?? null;
 }
@@ -278,7 +278,7 @@ export async function upsertReminder(
   input: Omit<Reminder, "id" | "createdAt" | "updatedAt">,
   id?: string,
 ) {
-  const db = getDb();
+  const db = await getDb();
   if (id) {
     const [reminder] = await db
       .update(reminders)
@@ -293,12 +293,12 @@ export async function upsertReminder(
 }
 
 export async function deleteReminder(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db.delete(reminders).where(eq(reminders.id, id));
 }
 
 export async function toggleReminderHandled(id: string, handled: boolean) {
-  const db = getDb();
+  const db = await getDb();
   await db
     .update(reminders)
     .set({ handled, updatedAt: new Date() })
@@ -306,7 +306,7 @@ export async function toggleReminderHandled(id: string, handled: boolean) {
 }
 
 export async function listMemos(filters: MemoFilters = {}) {
-  const db = getDb();
+  const db = await getDb();
   const query = searchValue(filters.search);
   const clauses = compact<SQL>([
     filters.tag?.trim() ? ilike(memos.tags, `%${filters.tag.trim()}%`) : null,
@@ -324,7 +324,7 @@ export async function listMemos(filters: MemoFilters = {}) {
 
 export async function getMemoById(id?: string | null) {
   if (!id) return null;
-  const db = getDb();
+  const db = await getDb();
   const [memo] = await db.select().from(memos).where(eq(memos.id, id)).limit(1);
   return memo ?? null;
 }
@@ -333,7 +333,7 @@ export async function upsertMemo(
   input: Omit<Memo, "id" | "createdAt" | "updatedAt">,
   id?: string,
 ) {
-  const db = getDb();
+  const db = await getDb();
   if (id) {
     const [memo] = await db
       .update(memos)
@@ -348,17 +348,17 @@ export async function upsertMemo(
 }
 
 export async function deleteMemo(id: string) {
-  const db = getDb();
+  const db = await getDb();
   await db.delete(memos).where(eq(memos.id, id));
 }
 
 export async function toggleMemoPinned(id: string, pinned: boolean) {
-  const db = getDb();
+  const db = await getDb();
   await db.update(memos).set({ pinned, updatedAt: new Date() }).where(eq(memos.id, id));
 }
 
 export async function getDashboardData() {
-  const db = getDb();
+  const db = await getDb();
   const today = getShanghaiDateString();
   const { start, end } = getShanghaiDayRange(today);
 
@@ -437,7 +437,7 @@ export async function getDashboardData() {
 }
 
 export async function listGanttTasks() {
-  const db = getDb();
+  const db = await getDb();
   return db
     .select()
     .from(tasks)
