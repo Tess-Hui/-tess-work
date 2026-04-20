@@ -47,7 +47,7 @@ export default async function DashboardPage() {
           <p className="mt-1 text-sm text-slate-500">一进入系统即可查看今天最重要的内容。</p>
         </div>
         <Button asChild>
-          <Link href="/tasks#task-form">
+          <Link href="/tasks?new=1#task-form">
             <ClipboardList className="h-4 w-4" />
             新增待办
           </Link>

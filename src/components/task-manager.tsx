@@ -23,6 +23,7 @@ import { listTasks, getTaskById } from "@/lib/data";
 import { EmptyState } from "@/components/empty-state";
 import { PriorityBadge } from "@/components/priority-badge";
 import { SubmitButton } from "@/components/submit-button";
+import { TaskFormToggle } from "@/components/task-form-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ type SearchParams = {
   liaison?: string;
   date?: string;
   edit?: string;
+  new?: string;
 };
 
 const pageMeta: Record<TaskStatus, { title: string; description: string }> = {
@@ -69,16 +71,20 @@ export async function TaskManager({
       liaison: searchParams.liaison,
       date: searchParams.date,
     }),
-    getTaskById(searchParams.edit),
+    status === "todo" ? getTaskById(searchParams.edit) : null,
   ]);
   const meta = pageMeta[status];
-  const showForm = status !== "trashed";
+  const showForm = status === "todo";
 
   return (
     <div className="grid gap-5">
       <PageTitle title={meta.title} description={meta.description} />
       <TaskFilters searchParams={searchParams} />
-      {showForm ? <TaskForm task={editing} /> : null}
+      {showForm ? (
+        <TaskFormToggle initialOpen={Boolean(editing || searchParams.new === "1")}>
+          <TaskForm task={editing} />
+        </TaskFormToggle>
+      ) : null}
       <TaskList items={items} status={status} />
     </div>
   );
@@ -91,12 +97,6 @@ function PageTitle({ title, description }: { title: string; description: string 
         <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{title}</h1>
         <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
-      <Button asChild variant="outline">
-        <Link href="/tasks">
-          <ClipboardList className="h-4 w-4" />
-          新增任务
-        </Link>
-      </Button>
     </div>
   );
 }
@@ -259,12 +259,6 @@ function TaskList({ items, status }: { items: Task[]; status: TaskStatus }) {
                       取消完成
                     </SubmitButton>
                   </form>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/completed?edit=${task.id}#task-form`}>
-                      <Pencil className="h-4 w-4" />
-                      编辑
-                    </Link>
-                  </Button>
                   <form action={trashTaskAction}>
                     <input type="hidden" name="id" value={task.id} />
                     <SubmitButton variant="danger" size="sm">
