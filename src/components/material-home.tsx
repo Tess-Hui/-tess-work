@@ -18,7 +18,7 @@ export async function MaterialHome() {
           <p className="mt-1 text-sm text-slate-500">以批次为核心，查看库存、记录流转和导出明细。</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button asChild>
+          <Button asChild variant="secondary">
             <Link href="/materials/batches?new=1#batch-form">
               <Plus className="h-4 w-4" />
               新建批次

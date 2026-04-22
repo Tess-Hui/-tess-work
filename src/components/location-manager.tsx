@@ -16,7 +16,7 @@ type Params = { edit?: string; new?: string; error?: string };
 
 const typeLabels = {
   warehouse: "仓库",
-  factory: "工厂",
+  factory: "物料制作商",
   other: "其他",
 } as const;
 
@@ -29,9 +29,9 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-950">地点管理</h1>
-          <p className="mt-1 text-sm text-slate-500">默认只有自己仓，工厂或其他地点可自行新增。</p>
+          <p className="mt-1 text-sm text-slate-500">默认只有自己仓，物料制作商或其他地点可自行新增。</p>
         </div>
-        <Button asChild>
+        <Button asChild variant="secondary">
           <Link href="/locations?new=1#location-form">新增地点</Link>
         </Button>
       </div>
@@ -100,7 +100,7 @@ function LocationForm({
           <Field label="类型">
             <Select name="type" defaultValue={location?.type ?? "other"}>
               <option value="warehouse">仓库</option>
-              <option value="factory">工厂</option>
+              <option value="factory">物料制作商</option>
               <option value="other">其他</option>
             </Select>
           </Field>

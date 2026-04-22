@@ -11,12 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { saveBatchAction } from "@/lib/actions";
-import type { Batch } from "@/db/schema";
-import { getBatchDetail, listBatches, listLocations, listMaterials } from "@/lib/data";
+import { getBatchDetail, listBatches, listMaterials } from "@/lib/data";
 
 type Params = {
   date?: string;
   materialId?: string;
+  materialName?: string;
   status?: string;
   supplier?: string;
   manufacturer?: string;
@@ -31,16 +31,16 @@ const statusLabels = {
 } as const;
 
 export async function BatchManager({ searchParams }: { searchParams: Params }) {
-  const [items, materialItems, locationItems, editing] = await Promise.all([
+  const [items, materialItems, editing] = await Promise.all([
     listBatches({
       date: searchParams.date,
       materialId: searchParams.materialId,
+      materialName: searchParams.materialName,
       status: searchParams.status as never,
       supplier: searchParams.supplier,
       manufacturer: searchParams.manufacturer,
     }),
     listMaterials(),
-    listLocations(),
     getBatchDetail(searchParams.edit),
   ]);
 
@@ -51,7 +51,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
           <h1 className="text-2xl font-semibold text-slate-950">批次管理</h1>
           <p className="mt-1 text-sm text-slate-500">每一批物料独立管理，库存由流转自动计算。</p>
         </div>
-        <Button asChild>
+        <Button asChild variant="secondary">
           <Link href="/materials/batches?new=1#batch-form">新建批次</Link>
         </Button>
       </div>
@@ -60,9 +60,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
 
       {editing || searchParams.new === "1" ? (
         <BatchForm
-          batch={editing?.batch ?? null}
-          materials={materialItems}
-          locations={locationItems}
+          detail={editing}
           isEditing={Boolean(editing)}
         />
       ) : null}
@@ -83,8 +81,9 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                   <div className="mt-2 grid gap-1 text-sm text-slate-500 sm:grid-cols-2">
                     <span>制作数量：{Number(row.batch.quantity).toFixed(2)} {row.material.unit}</span>
                     <span>当前剩余：{row.currentRemaining.toFixed(2)} {row.material.unit}</span>
-                    <span>供应商：{row.batch.supplier || "未填写"}</span>
-                    <span>厂家：{row.batch.manufacturer || "未填写"}</span>
+                    <span>物料尺寸：{row.material.size || "未填写"}</span>
+                    <span>使用商：{row.batch.supplier || "未填写"}</span>
+                    <span>物料制作商：{row.batch.manufacturer || "未填写"}</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -118,20 +117,18 @@ function BatchFilters({
       <CardContent className="pt-5">
         <form className="grid gap-3 md:grid-cols-[0.9fr_1fr_0.9fr_1fr_1fr_auto_auto]">
           <Input name="date" type="date" defaultValue={searchParams.date} />
-          <Select name="materialId" defaultValue={searchParams.materialId ?? ""}>
-            <option value="">全部物料</option>
-            {materials.map((material) => (
-              <option key={material.id} value={material.id}>{material.name}</option>
-            ))}
-          </Select>
+          <Input name="materialName" defaultValue={searchParams.materialName} placeholder="物料名称" list="batch-filter-materials" />
+          <datalist id="batch-filter-materials">
+            {materials.map((material) => <option key={material.id} value={material.name} />)}
+          </datalist>
           <Select name="status" defaultValue={searchParams.status ?? "all"}>
             <option value="all">全部状态</option>
             <option value="active">进行中</option>
             <option value="used_up">已用完</option>
             <option value="inactive">已停用</option>
           </Select>
-          <Input name="supplier" defaultValue={searchParams.supplier} placeholder="供应商" />
-          <Input name="manufacturer" defaultValue={searchParams.manufacturer} placeholder="厂家" />
+          <Input name="supplier" defaultValue={searchParams.supplier} placeholder="使用商" />
+          <Input name="manufacturer" defaultValue={searchParams.manufacturer} placeholder="物料制作商" />
           <Button type="submit" variant="secondary">
             <Search className="h-4 w-4" />
             筛选
@@ -146,16 +143,16 @@ function BatchFilters({
 }
 
 function BatchForm({
-  batch,
-  materials,
-  locations,
+  detail,
   isEditing,
 }: {
-  batch: Batch | null;
-  materials: Awaited<ReturnType<typeof listMaterials>>;
-  locations: Awaited<ReturnType<typeof listLocations>>;
+  detail: Awaited<ReturnType<typeof getBatchDetail>>;
   isEditing: boolean;
 }) {
+  const batch = detail?.batch ?? null;
+  const material = detail?.material ?? null;
+  const initialLocationName = detail?.initialLocation.name ?? "自己仓";
+
   return (
     <Card id="batch-form">
       <CardHeader>
@@ -165,13 +162,17 @@ function BatchForm({
         <form action={saveBatchAction} className="grid gap-4">
           <input type="hidden" name="id" value={batch?.id ?? ""} />
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="物料">
-              <Select name="materialId" defaultValue={batch?.materialId ?? ""} disabled={isEditing} required>
-                <option value="">选择物料</option>
-                {materials.map((material) => (
-                  <option key={material.id} value={material.id}>{material.name}</option>
-                ))}
-              </Select>
+            <Field label="物料名称">
+              <Input name="materialName" defaultValue={material?.name} placeholder="手动输入物料名称" required />
+            </Field>
+            <Field label="物料类型">
+              <Input name="materialType" defaultValue={material?.type} />
+            </Field>
+            <Field label="物料尺寸">
+              <Input name="materialSize" defaultValue={material?.size} />
+            </Field>
+            <Field label="单位">
+              <Input name="materialUnit" defaultValue={material?.unit} placeholder="米 / 个 / 卷 / 公斤" />
             </Field>
             <Field label="制作日期">
               <Input name="productionDate" type="date" defaultValue={String(batch?.productionDate ?? "")} required />
@@ -182,18 +183,19 @@ function BatchForm({
             <Field label="单价">
               <Input name="price" type="number" step="0.01" min="0" defaultValue={batch?.price} />
             </Field>
-            <Field label="供应商">
+            <Field label="使用商">
               <Input name="supplier" defaultValue={batch?.supplier} />
             </Field>
-            <Field label="厂家">
+            <Field label="物料制作商">
               <Input name="manufacturer" defaultValue={batch?.manufacturer} />
             </Field>
             <Field label="初始地点">
-              <Select name="initialLocationId" defaultValue={batch?.initialLocationId ?? locations[0]?.id} disabled={isEditing}>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>{location.name}</option>
-                ))}
-              </Select>
+              <Input
+                name="initialLocationName"
+                defaultValue={initialLocationName}
+                readOnly={isEditing}
+                placeholder="自己仓"
+              />
             </Field>
             <Field label="状态">
               <Select name="status" defaultValue={batch?.status ?? "active"}>
@@ -203,6 +205,9 @@ function BatchForm({
               </Select>
             </Field>
           </div>
+          <Field label="物料备注">
+            <Textarea name="materialRemark" defaultValue={material?.remark} />
+          </Field>
           <Field label="备注">
             <Textarea name="remark" defaultValue={batch?.remark} />
           </Field>

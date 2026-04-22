@@ -64,11 +64,14 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
           <span>制作数量：{Number(detail.batch.quantity).toFixed(2)} {detail.material.unit}</span>
           <span>当前剩余：{detail.currentRemaining.toFixed(2)} {detail.material.unit}</span>
           <span>制作日期：{formatDate(detail.batch.productionDate)}</span>
+          <span>物料类型：{detail.material.type || "未填写"}</span>
+          <span>物料尺寸：{detail.material.size || "未填写"}</span>
+          <span>单位：{detail.material.unit || "未填写"}</span>
           <span>单价：{Number(detail.batch.price).toFixed(2)}</span>
           <span>总价：{Number(detail.batch.totalPrice).toFixed(2)}</span>
           <span>初始地点：{detail.initialLocation.name}</span>
-          <span>供应商：{detail.batch.supplier || "未填写"}</span>
-          <span>厂家：{detail.batch.manufacturer || "未填写"}</span>
+          <span>使用商：{detail.batch.supplier || "未填写"}</span>
+          <span>物料制作商：{detail.batch.manufacturer || "未填写"}</span>
           <span>创建：{formatDateTime(detail.batch.createdAt)}</span>
         </CardContent>
       </Card>

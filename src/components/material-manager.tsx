@@ -27,7 +27,7 @@ export async function MaterialManager({ searchParams }: { searchParams: Params }
           <h1 className="text-2xl font-semibold text-slate-950">物料列表</h1>
           <p className="mt-1 text-sm text-slate-500">维护物料名称、类型、尺寸和单位。</p>
         </div>
-        <Button asChild>
+        <Button asChild variant="secondary">
           <Link href="/materials/items?new=1#material-form">新增物料</Link>
         </Button>
       </div>
@@ -43,7 +43,7 @@ export async function MaterialManager({ searchParams }: { searchParams: Params }
                   <p className="text-base font-semibold text-slate-950">{item.name}</p>
                   <div className="mt-2 grid gap-1 text-sm text-slate-500 sm:grid-cols-2">
                     <span>类型：{item.type || "未填写"}</span>
-                    <span>尺寸：{item.size || "未填写"}</span>
+                    <span>物料尺寸：{item.size || "未填写"}</span>
                     <span>当前库存：{item.currentStock.toFixed(2)} {item.unit}</span>
                     <span>最近使用：{item.latestUsedAt ? formatDate(item.latestUsedAt) : "暂无"}</span>
                   </div>
@@ -86,7 +86,7 @@ function MaterialForm({
             <Field label="类型">
               <Input name="type" defaultValue={material?.type} />
             </Field>
-            <Field label="尺寸信息">
+            <Field label="物料尺寸">
               <Input name="size" defaultValue={material?.size} />
             </Field>
             <Field label="单位">

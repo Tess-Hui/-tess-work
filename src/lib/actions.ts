@@ -286,16 +286,21 @@ export async function deleteLocationAction(formData: FormData) {
 export async function saveBatchAction(formData: FormData) {
   await requireAuth();
   const id = text(formData, "id");
-  const materialId = text(formData, "materialId");
+  const materialName = text(formData, "materialName");
   const productionDate = text(formData, "productionDate");
   const quantity = numberField(formData, "quantity");
   const price = numberField(formData, "price");
   const status = text(formData, "status");
-  if ((!id && !materialId) || !productionDate || quantity <= 0) {
+  if (!materialName || !productionDate || quantity <= 0) {
     redirect("/materials/batches?error=required");
   }
 
   const input = {
+    materialName,
+    materialType: text(formData, "materialType"),
+    materialSize: text(formData, "materialSize"),
+    materialUnit: text(formData, "materialUnit"),
+    materialRemark: text(formData, "materialRemark"),
     productionDate,
     quantity,
     price,
@@ -310,8 +315,7 @@ export async function saveBatchAction(formData: FormData) {
   } else {
     await createBatch({
       ...input,
-      materialId,
-      initialLocationId: text(formData, "initialLocationId"),
+      initialLocationName: text(formData, "initialLocationName"),
     });
   }
   revalidateApp();

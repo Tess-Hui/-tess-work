@@ -66,6 +66,7 @@ type MemoFilters = {
 type BatchFilters = {
   date?: string;
   materialId?: string;
+  materialName?: string;
   status?: BatchStatus | "all";
   supplier?: string;
   manufacturer?: string;
@@ -496,6 +497,26 @@ export async function upsertLocation(
   return location;
 }
 
+export async function getOrCreateLocationByName(name?: string) {
+  const db = await getDb();
+  const cleanName = name?.trim() || "自己仓";
+  const [existing] = await db
+    .select()
+    .from(locations)
+    .where(eq(locations.name, cleanName))
+    .limit(1);
+  if (existing) return existing;
+
+  const [location] = await db
+    .insert(locations)
+    .values({
+      name: cleanName,
+      type: cleanName === "自己仓" ? "warehouse" : "other",
+    })
+    .returning();
+  return location;
+}
+
 export async function deleteLocation(id: string) {
   const db = await getDb();
   const [usedByBatch] = await db
@@ -571,11 +592,60 @@ export async function upsertMaterial(
   return material;
 }
 
+export async function getOrCreateMaterialByName(input: {
+  name: string;
+  type: string;
+  size: string;
+  unit: string;
+  remark: string;
+}) {
+  const db = await getDb();
+  const name = input.name.trim();
+  const [existing] = await db
+    .select()
+    .from(materials)
+    .where(eq(materials.name, name))
+    .limit(1);
+
+  if (!existing) {
+    const [material] = await db
+      .insert(materials)
+      .values({ ...input, name })
+      .returning();
+    return material;
+  }
+
+  const next = {
+    name,
+    type: input.type.trim() || existing.type,
+    size: input.size.trim() || existing.size,
+    unit: input.unit.trim() || existing.unit,
+    remark: input.remark.trim() || existing.remark,
+  };
+
+  if (
+    next.type === existing.type &&
+    next.size === existing.size &&
+    next.unit === existing.unit &&
+    next.remark === existing.remark
+  ) {
+    return existing;
+  }
+
+  const [material] = await db
+    .update(materials)
+    .set(next)
+    .where(eq(materials.id, existing.id))
+    .returning();
+  return material;
+}
+
 export async function listBatches(filters: BatchFilters = {}) {
   const db = await getDb();
   const clauses = compact<SQL>([
     filters.date ? eq(batches.productionDate, filters.date) : null,
     filters.materialId ? eq(batches.materialId, filters.materialId) : null,
+    filters.materialName?.trim() ? ilike(materials.name, `%${filters.materialName.trim()}%`) : null,
     filters.status && filters.status !== "all" ? eq(batches.status, filters.status) : null,
     filters.supplier?.trim() ? ilike(batches.supplier, `%${filters.supplier.trim()}%`) : null,
     filters.manufacturer?.trim()
@@ -634,30 +704,43 @@ export async function getBatchDetail(id?: string | null) {
 }
 
 export async function createBatch(input: {
-  materialId: string;
+  materialName: string;
+  materialType: string;
+  materialSize: string;
+  materialUnit: string;
+  materialRemark: string;
   productionDate: string;
   quantity: number;
   price: number;
   supplier: string;
   manufacturer: string;
-  initialLocationId?: string;
+  initialLocationName?: string;
   status: BatchStatus;
   remark: string;
 }) {
   const db = await getDb();
-  const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
+  const [material, initialLocation] = await Promise.all([
+    getOrCreateMaterialByName({
+      name: input.materialName,
+      type: input.materialType,
+      size: input.materialSize,
+      unit: input.materialUnit,
+      remark: input.materialRemark,
+    }),
+    getOrCreateLocationByName(input.initialLocationName),
+  ]);
   const [batch] = await db
     .insert(batches)
     .values({
       batchCode: createBatchCode(),
-      materialId: input.materialId,
+      materialId: material.id,
       productionDate: input.productionDate,
       quantity: numericValue(input.quantity),
       price: numericValue(input.price),
       totalPrice: numericValue(input.quantity * input.price),
       supplier: input.supplier,
       manufacturer: input.manufacturer,
-      initialLocationId,
+      initialLocationId: initialLocation.id,
       status: input.status,
       remark: input.remark,
     })
@@ -668,6 +751,11 @@ export async function createBatch(input: {
 export async function updateBatch(
   id: string,
   input: {
+    materialName: string;
+    materialType: string;
+    materialSize: string;
+    materialUnit: string;
+    materialRemark: string;
     productionDate: string;
     quantity: number;
     price: number;
@@ -678,9 +766,17 @@ export async function updateBatch(
   },
 ) {
   const db = await getDb();
+  const material = await getOrCreateMaterialByName({
+    name: input.materialName,
+    type: input.materialType,
+    size: input.materialSize,
+    unit: input.materialUnit,
+    remark: input.materialRemark,
+  });
   const [batch] = await db
     .update(batches)
     .set({
+      materialId: material.id,
       productionDate: input.productionDate,
       quantity: numericValue(input.quantity),
       price: numericValue(input.price),

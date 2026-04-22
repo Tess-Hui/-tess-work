@@ -13,7 +13,7 @@ export async function GET() {
     {
       name: "当前库存表",
       rows: [
-        ["物料", "类型", "尺寸", "单位", "批次编号", "地点", "当前库存"],
+        ["物料", "类型", "物料尺寸", "单位", "批次编号", "地点", "当前库存"],
         ...rows.map((row) => [
           row.material.name,
           row.material.type,
