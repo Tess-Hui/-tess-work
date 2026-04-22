@@ -9,6 +9,7 @@ import {
   lt,
   ne,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 
@@ -32,6 +33,7 @@ type TaskFilters = {
   priority?: Priority | "all";
   liaison?: string;
   date?: string;
+  sort?: string;
 };
 
 type FixedFilters = {
@@ -57,6 +59,22 @@ function compact<T>(items: Array<T | undefined | null | false>) {
 function searchValue(value?: string) {
   const clean = value?.trim();
   return clean ? `%${clean}%` : null;
+}
+
+function taskOrderBy(sort?: string) {
+  const priorityRank = sql<number>`case ${tasks.priority} when 'high' then 3 when 'medium' then 2 else 1 end`;
+
+  switch (sort) {
+    case "priority-asc":
+      return [asc(priorityRank), desc(tasks.createdAt)];
+    case "created-desc":
+      return [desc(tasks.createdAt)];
+    case "created-asc":
+      return [asc(tasks.createdAt)];
+    case "priority-desc":
+    default:
+      return [desc(priorityRank), desc(tasks.createdAt)];
+  }
 }
 
 export async function listTasks(filters: TaskFilters = {}) {
@@ -89,7 +107,7 @@ export async function listTasks(filters: TaskFilters = {}) {
     .select()
     .from(tasks)
     .where(clauses.length ? and(...clauses) : undefined)
-    .orderBy(desc(tasks.plannedAt), desc(tasks.createdAt));
+    .orderBy(...taskOrderBy(filters.sort));
 }
 
 export async function getTaskById(id?: string | null) {

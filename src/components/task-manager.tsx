@@ -37,6 +37,7 @@ type SearchParams = {
   priority?: string;
   liaison?: string;
   date?: string;
+  sort?: string;
   edit?: string;
   new?: string;
 };
@@ -70,6 +71,7 @@ export async function TaskManager({
       priority: searchParams.priority as never,
       liaison: searchParams.liaison,
       date: searchParams.date,
+      sort: searchParams.sort,
     }),
     status === "todo" ? getTaskById(searchParams.edit) : null,
   ]);
@@ -81,7 +83,10 @@ export async function TaskManager({
       <PageTitle title={meta.title} description={meta.description} />
       <TaskFilters searchParams={searchParams} />
       {showForm ? (
-        <TaskFormToggle initialOpen={Boolean(editing || searchParams.new === "1")}>
+        <TaskFormToggle
+          key={editing?.id ?? searchParams.new ?? "task-form"}
+          initialOpen={Boolean(editing || searchParams.new === "1")}
+        >
           <TaskForm task={editing} />
         </TaskFormToggle>
       ) : null}
@@ -105,7 +110,7 @@ function TaskFilters({ searchParams }: { searchParams: SearchParams }) {
   return (
     <Card>
       <CardContent className="pt-5">
-        <form className="grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.9fr_0.9fr_auto_auto]">
+        <form className="grid gap-3 md:grid-cols-[1.4fr_0.85fr_0.9fr_0.9fr_1fr_auto_auto]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
@@ -123,6 +128,12 @@ function TaskFilters({ searchParams }: { searchParams: SearchParams }) {
           </Select>
           <Input name="liaison" defaultValue={searchParams.liaison} placeholder="对接人" />
           <Input name="date" type="date" defaultValue={searchParams.date} />
+          <Select name="sort" defaultValue={searchParams.sort ?? "priority-desc"}>
+            <option value="priority-desc">高优先级在前</option>
+            <option value="priority-asc">低优先级在前</option>
+            <option value="created-desc">创建时间最新在前</option>
+            <option value="created-asc">创建时间最早在前</option>
+          </Select>
           <Button type="submit" variant="secondary">
             筛选
           </Button>
