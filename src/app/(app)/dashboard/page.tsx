@@ -3,7 +3,6 @@ import {
   Bell,
   CheckCircle2,
   ClipboardList,
-  NotebookText,
   Pin,
   Siren,
   Workflow,
@@ -25,7 +24,6 @@ const statIcons = {
   completedTasks: CheckCircle2,
   highPriorityTasks: Siren,
   fixedItems: Pin,
-  memos: NotebookText,
 };
 
 export default async function DashboardPage() {
@@ -36,7 +34,6 @@ export default async function DashboardPage() {
     { key: "completedTasks", label: "已完成", value: data.counts.completedTasks },
     { key: "highPriorityTasks", label: "高优先级", value: data.counts.highPriorityTasks },
     { key: "fixedItems", label: "固定事项", value: data.counts.fixedItems },
-    { key: "memos", label: "备忘录", value: data.counts.memos },
   ] as const;
 
   return (
@@ -117,7 +114,7 @@ export default async function DashboardPage() {
         </Card>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-2">
+      <section className="grid gap-5">
         <Card>
           <CardHeader>
             <CardTitle>提醒事项</CardTitle>
@@ -135,24 +132,6 @@ export default async function DashboardPage() {
               ))
             ) : (
               <p className="rounded-md border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">暂无未处理提醒。</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>最近备忘录</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {data.recentMemos.length ? (
-              data.recentMemos.map((memo) => (
-                <Link key={memo.id} href={`/memos?edit=${memo.id}#memo-form`} className="rounded-md border border-slate-200 p-3 hover:bg-slate-50">
-                  <p className="font-medium text-slate-950">{memo.title}</p>
-                  <p className="mt-1 line-clamp-2 text-sm text-slate-500">{memo.content}</p>
-                </Link>
-              ))
-            ) : (
-              <p className="rounded-md border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">暂无备忘录。</p>
             )}
           </CardContent>
         </Card>

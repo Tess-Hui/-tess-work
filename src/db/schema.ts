@@ -2,10 +2,12 @@ import {
   boolean,
   date,
   index,
+  numeric,
   pgEnum,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -14,6 +16,23 @@ export const taskStatusEnum = pgEnum("task_status", [
   "todo",
   "completed",
   "trashed",
+]);
+export const batchStatusEnum = pgEnum("batch_status", [
+  "active",
+  "used_up",
+  "inactive",
+]);
+export const locationTypeEnum = pgEnum("location_type", [
+  "warehouse",
+  "factory",
+  "other",
+]);
+export const movementTypeEnum = pgEnum("movement_type", [
+  "OUT",
+  "TRANSFER",
+  "RETURN",
+  "SCRAP",
+  "CONSUME",
 ]);
 
 export const tasks = pgTable(
@@ -90,24 +109,96 @@ export const reminders = pgTable(
   ],
 );
 
-export const memos = pgTable(
-  "memos",
+export const materials = pgTable(
+  "materials",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    title: text("title").notNull(),
-    content: text("content").notNull(),
-    tags: text("tags").notNull().default(""),
-    pinned: boolean("pinned").notNull().default(false),
+    name: text("name").notNull(),
+    type: text("type").notNull().default(""),
+    size: text("size").notNull().default(""),
+    unit: text("unit").notNull().default(""),
+    remark: text("remark").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    index("memos_pinned_idx").on(table.pinned),
-    index("memos_tags_idx").on(table.tags),
+    index("materials_name_idx").on(table.name),
+    index("materials_type_idx").on(table.type),
+  ],
+);
+
+export const locations = pgTable(
+  "locations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    type: locationTypeEnum("type").notNull().default("warehouse"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("locations_name_idx").on(table.name),
+  ],
+);
+
+export const batches = pgTable(
+  "batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchCode: text("batch_code").notNull(),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => materials.id),
+    productionDate: date("production_date").notNull(),
+    quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+    totalPrice: numeric("total_price", { precision: 12, scale: 2 }).notNull(),
+    supplier: text("supplier").notNull().default(""),
+    manufacturer: text("manufacturer").notNull().default(""),
+    initialLocationId: uuid("initial_location_id")
+      .notNull()
+      .references(() => locations.id),
+    status: batchStatusEnum("status").notNull().default("active"),
+    remark: text("remark").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("batches_code_idx").on(table.batchCode),
+    index("batches_material_idx").on(table.materialId),
+    index("batches_status_idx").on(table.status),
+    index("batches_production_date_idx").on(table.productionDate),
+    index("batches_supplier_idx").on(table.supplier),
+    index("batches_manufacturer_idx").on(table.manufacturer),
+  ],
+);
+
+export const movements = pgTable(
+  "movements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => batches.id),
+    date: date("date").notNull(),
+    type: movementTypeEnum("type").notNull(),
+    fromLocationId: uuid("from_location_id").references(() => locations.id),
+    toLocationId: uuid("to_location_id").references(() => locations.id),
+    quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+    remark: text("remark").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("movements_batch_idx").on(table.batchId),
+    index("movements_date_idx").on(table.date),
+    index("movements_type_idx").on(table.type),
+    index("movements_from_location_idx").on(table.fromLocationId),
+    index("movements_to_location_idx").on(table.toLocationId),
   ],
 );
 
@@ -115,6 +206,12 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type FixedItem = typeof fixedItems.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
-export type Memo = typeof memos.$inferSelect;
+export type Material = typeof materials.$inferSelect;
+export type Batch = typeof batches.$inferSelect;
+export type Location = typeof locations.$inferSelect;
+export type Movement = typeof movements.$inferSelect;
 export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "todo" | "completed" | "trashed";
+export type BatchStatus = "active" | "used_up" | "inactive";
+export type LocationType = "warehouse" | "factory" | "other";
+export type MovementType = "OUT" | "TRANSFER" | "RETURN" | "SCRAP" | "CONSUME";

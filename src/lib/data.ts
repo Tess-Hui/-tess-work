@@ -7,6 +7,7 @@ import {
   gte,
   ilike,
   lt,
+  lte,
   ne,
   or,
   sql,
@@ -15,11 +16,19 @@ import {
 
 import {
   fixedItems,
-  memos,
+  materials,
+  batches,
+  locations,
+  movements,
   reminders,
   tasks,
+  type Batch,
+  type BatchStatus,
   type FixedItem,
-  type Memo,
+  type LocationType,
+  type Material,
+  type Movement,
+  type MovementType,
   type Priority,
   type Reminder,
   type TaskStatus,
@@ -47,9 +56,17 @@ type ReminderFilters = {
   handled?: "all" | "handled" | "open";
 };
 
-type MemoFilters = {
-  search?: string;
-  tag?: string;
+type BatchFilters = {
+  date?: string;
+  materialId?: string;
+  status?: BatchStatus | "all";
+  supplier?: string;
+  manufacturer?: string;
+};
+
+type MovementFilters = {
+  startDate?: string;
+  endDate?: string;
 };
 
 function compact<T>(items: Array<T | undefined | null | false>) {
@@ -75,6 +92,80 @@ function taskOrderBy(sort?: string) {
     default:
       return [desc(priorityRank), desc(tasks.createdAt)];
   }
+}
+
+export function numberValue(value: string | number | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numericValue(value: number) {
+  return value.toFixed(2);
+}
+
+function dateValue(value?: string | null) {
+  return value || getShanghaiDateString();
+}
+
+function createBatchCode() {
+  const date = getShanghaiDateString().replaceAll("-", "");
+  return `B${date}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+}
+
+function addStock(stock: Map<string, number>, locationId: string, quantity: number) {
+  stock.set(locationId, (stock.get(locationId) ?? 0) + quantity);
+}
+
+export function calculateBatchStock(
+  batch: Batch,
+  movementItems: Movement[],
+) {
+  const stock = new Map<string, number>();
+  addStock(stock, batch.initialLocationId, numberValue(batch.quantity));
+
+  for (const movement of movementItems) {
+    const quantity = numberValue(movement.quantity);
+
+    if (movement.fromLocationId) addStock(stock, movement.fromLocationId, -quantity);
+    if (movement.toLocationId) addStock(stock, movement.toLocationId, quantity);
+  }
+
+  return stock;
+}
+
+async function getDefaultLocationId(db: Awaited<ReturnType<typeof getDb>>) {
+  const [existing] = await db
+    .select()
+    .from(locations)
+    .where(eq(locations.name, "自己仓"))
+    .limit(1);
+  if (existing) return existing.id;
+
+  const [created] = await db
+    .insert(locations)
+    .values({ name: "自己仓", type: "warehouse" })
+    .returning();
+  return created.id;
+}
+
+async function refreshBatchStatus(batchId: string) {
+  const db = await getDb();
+  const [batch] = await db.select().from(batches).where(eq(batches.id, batchId)).limit(1);
+  if (!batch || batch.status === "inactive") return;
+
+  const movementItems = await db
+    .select()
+    .from(movements)
+    .where(eq(movements.batchId, batchId));
+  const remaining = [...calculateBatchStock(batch, movementItems).values()].reduce(
+    (sum, quantity) => sum + quantity,
+    0,
+  );
+
+  await db
+    .update(batches)
+    .set({ status: remaining <= 0 ? "used_up" : "active" })
+    .where(eq(batches.id, batchId));
 }
 
 export async function listTasks(filters: TaskFilters = {}) {
@@ -323,56 +414,342 @@ export async function toggleReminderHandled(id: string, handled: boolean) {
     .where(eq(reminders.id, id));
 }
 
-export async function listMemos(filters: MemoFilters = {}) {
+export async function listLocations() {
   const db = await getDb();
-  const query = searchValue(filters.search);
-  const clauses = compact<SQL>([
-    filters.tag?.trim() ? ilike(memos.tags, `%${filters.tag.trim()}%`) : null,
-    query
-      ? or(ilike(memos.title, query), ilike(memos.content, query), ilike(memos.tags, query))
-      : null,
-  ]);
-
-  return db
-    .select()
-    .from(memos)
-    .where(clauses.length ? and(...clauses) : undefined)
-    .orderBy(desc(memos.pinned), desc(memos.updatedAt));
+  return db.select().from(locations).orderBy(asc(locations.name));
 }
 
-export async function getMemoById(id?: string | null) {
-  if (!id) return null;
-  const db = await getDb();
-  const [memo] = await db.select().from(memos).where(eq(memos.id, id)).limit(1);
-  return memo ?? null;
-}
-
-export async function upsertMemo(
-  input: Omit<Memo, "id" | "createdAt" | "updatedAt">,
+export async function upsertLocation(
+  input: { name: string; type: LocationType },
   id?: string,
 ) {
   const db = await getDb();
   if (id) {
-    const [memo] = await db
-      .update(memos)
-      .set({ ...input, updatedAt: new Date() })
-      .where(eq(memos.id, id))
+    const [location] = await db
+      .update(locations)
+      .set(input)
+      .where(eq(locations.id, id))
       .returning();
-    return memo;
+    return location;
   }
 
-  const [memo] = await db.insert(memos).values(input).returning();
-  return memo;
+  const [location] = await db.insert(locations).values(input).returning();
+  return location;
 }
 
-export async function deleteMemo(id: string) {
+export async function deleteLocation(id: string) {
   const db = await getDb();
-  await db.delete(memos).where(eq(memos.id, id));
+  const [usedByBatch] = await db
+    .select({ value: count() })
+    .from(batches)
+    .where(eq(batches.initialLocationId, id));
+  const [usedFrom] = await db
+    .select({ value: count() })
+    .from(movements)
+    .where(eq(movements.fromLocationId, id));
+  const [usedTo] = await db
+    .select({ value: count() })
+    .from(movements)
+    .where(eq(movements.toLocationId, id));
+
+  if ((usedByBatch?.value ?? 0) + (usedFrom?.value ?? 0) + (usedTo?.value ?? 0) > 0) {
+    throw new Error("LOCATION_IN_USE");
+  }
+
+  await db.delete(locations).where(eq(locations.id, id));
 }
 
-export async function toggleMemoPinned(id: string, pinned: boolean) {
+export async function listMaterials() {
   const db = await getDb();
-  await db.update(memos).set({ pinned, updatedAt: new Date() }).where(eq(memos.id, id));
+  const [materialItems, batchItems, movementItems] = await Promise.all([
+    db.select().from(materials).orderBy(asc(materials.name)),
+    db.select().from(batches),
+    db.select().from(movements),
+  ]);
+
+  return materialItems.map((material) => {
+    const materialBatches = batchItems.filter((batch) => batch.materialId === material.id);
+    const currentStock = materialBatches.reduce((sum, batch) => {
+      const batchMovements = movementItems.filter((movement) => movement.batchId === batch.id);
+      return (
+        sum +
+        [...calculateBatchStock(batch, batchMovements).values()].reduce(
+          (batchSum, quantity) => batchSum + quantity,
+          0,
+        )
+      );
+    }, 0);
+    const latestMovement = movementItems
+      .filter((movement) => materialBatches.some((batch) => batch.id === movement.batchId))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+
+    return { ...material, currentStock, latestUsedAt: latestMovement?.date ?? null };
+  });
+}
+
+export async function getMaterialById(id?: string | null) {
+  if (!id) return null;
+  const db = await getDb();
+  const [material] = await db.select().from(materials).where(eq(materials.id, id)).limit(1);
+  return material ?? null;
+}
+
+export async function upsertMaterial(
+  input: Omit<Material, "id" | "createdAt">,
+  id?: string,
+) {
+  const db = await getDb();
+  if (id) {
+    const [material] = await db
+      .update(materials)
+      .set(input)
+      .where(eq(materials.id, id))
+      .returning();
+    return material;
+  }
+
+  const [material] = await db.insert(materials).values(input).returning();
+  return material;
+}
+
+export async function listBatches(filters: BatchFilters = {}) {
+  const db = await getDb();
+  const clauses = compact<SQL>([
+    filters.date ? eq(batches.productionDate, filters.date) : null,
+    filters.materialId ? eq(batches.materialId, filters.materialId) : null,
+    filters.status && filters.status !== "all" ? eq(batches.status, filters.status) : null,
+    filters.supplier?.trim() ? ilike(batches.supplier, `%${filters.supplier.trim()}%`) : null,
+    filters.manufacturer?.trim()
+      ? ilike(batches.manufacturer, `%${filters.manufacturer.trim()}%`)
+      : null,
+  ]);
+
+  const [batchRows, movementItems] = await Promise.all([
+    db
+      .select({ batch: batches, material: materials, initialLocation: locations })
+      .from(batches)
+      .innerJoin(materials, eq(batches.materialId, materials.id))
+      .innerJoin(locations, eq(batches.initialLocationId, locations.id))
+      .where(clauses.length ? and(...clauses) : undefined)
+      .orderBy(desc(batches.productionDate), desc(batches.createdAt)),
+    db.select().from(movements),
+  ]);
+
+  return batchRows.map((row) => {
+    const batchMovements = movementItems.filter((movement) => movement.batchId === row.batch.id);
+    const currentRemaining = [...calculateBatchStock(row.batch, batchMovements).values()].reduce(
+      (sum, quantity) => sum + quantity,
+      0,
+    );
+    return { ...row, currentRemaining };
+  });
+}
+
+export async function getBatchDetail(id?: string | null) {
+  if (!id) return null;
+  const db = await getDb();
+  const [row] = await db
+    .select({ batch: batches, material: materials, initialLocation: locations })
+    .from(batches)
+    .innerJoin(materials, eq(batches.materialId, materials.id))
+    .innerJoin(locations, eq(batches.initialLocationId, locations.id))
+    .where(eq(batches.id, id))
+    .limit(1);
+  if (!row) return null;
+
+  const [movementRows, locationItems] = await Promise.all([
+    db
+      .select()
+      .from(movements)
+      .where(eq(movements.batchId, id))
+      .orderBy(desc(movements.date), desc(movements.createdAt)),
+    listLocations(),
+  ]);
+  const stock = calculateBatchStock(row.batch, movementRows);
+  const stockDistribution = locationItems
+    .map((location) => ({ location, quantity: stock.get(location.id) ?? 0 }))
+    .filter((item) => Math.abs(item.quantity) > 0.0001);
+  const currentRemaining = stockDistribution.reduce((sum, item) => sum + item.quantity, 0);
+
+  return { ...row, movements: movementRows, locations: locationItems, stockDistribution, currentRemaining };
+}
+
+export async function createBatch(input: {
+  materialId: string;
+  productionDate: string;
+  quantity: number;
+  price: number;
+  supplier: string;
+  manufacturer: string;
+  initialLocationId?: string;
+  status: BatchStatus;
+  remark: string;
+}) {
+  const db = await getDb();
+  const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
+  const [batch] = await db
+    .insert(batches)
+    .values({
+      batchCode: createBatchCode(),
+      materialId: input.materialId,
+      productionDate: input.productionDate,
+      quantity: numericValue(input.quantity),
+      price: numericValue(input.price),
+      totalPrice: numericValue(input.quantity * input.price),
+      supplier: input.supplier,
+      manufacturer: input.manufacturer,
+      initialLocationId,
+      status: input.status,
+      remark: input.remark,
+    })
+    .returning();
+  return batch;
+}
+
+export async function updateBatch(
+  id: string,
+  input: {
+    productionDate: string;
+    quantity: number;
+    price: number;
+    supplier: string;
+    manufacturer: string;
+    status: BatchStatus;
+    remark: string;
+  },
+) {
+  const db = await getDb();
+  const [batch] = await db
+    .update(batches)
+    .set({
+      productionDate: input.productionDate,
+      quantity: numericValue(input.quantity),
+      price: numericValue(input.price),
+      totalPrice: numericValue(input.quantity * input.price),
+      supplier: input.supplier,
+      manufacturer: input.manufacturer,
+      status: input.status,
+      remark: input.remark,
+    })
+    .where(eq(batches.id, id))
+    .returning();
+  await refreshBatchStatus(id);
+  return batch;
+}
+
+export async function createMovement(input: {
+  batchId: string;
+  date: string;
+  type: MovementType;
+  fromLocationId?: string | null;
+  toLocationId?: string | null;
+  quantity: number;
+  remark: string;
+}) {
+  const detail = await getBatchDetail(input.batchId);
+  if (!detail) throw new Error("BATCH_NOT_FOUND");
+  if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  const db = await getDb();
+  const defaultLocationId = await getDefaultLocationId(db);
+  const fromLocationId =
+    input.type === "OUT" && !input.fromLocationId
+      ? defaultLocationId
+      : input.fromLocationId || null;
+  const toLocationId =
+    input.type === "RETURN" && !input.toLocationId
+      ? defaultLocationId
+      : input.toLocationId || null;
+
+  if (fromLocationId) {
+    const available = detail.stockDistribution.find(
+      (item) => item.location.id === fromLocationId,
+    )?.quantity ?? 0;
+    if (available + 0.0001 < input.quantity) throw new Error("INSUFFICIENT_STOCK");
+  }
+
+  const [movement] = await db
+    .insert(movements)
+    .values({
+      batchId: input.batchId,
+      date: dateValue(input.date),
+      type: input.type,
+      fromLocationId,
+      toLocationId,
+      quantity: numericValue(input.quantity),
+      remark: input.remark,
+    })
+    .returning();
+  await refreshBatchStatus(input.batchId);
+  return movement;
+}
+
+export async function getMaterialHomeData() {
+  const [batchItems, materialItems] = await Promise.all([
+    listBatches(),
+    listMaterials(),
+  ]);
+
+  return {
+    recentBatches: batchItems.slice(0, 5),
+    materialCount: materialItems.length,
+    batchCount: batchItems.length,
+    totalStock: materialItems.reduce((sum, material) => sum + material.currentStock, 0),
+  };
+}
+
+export async function listMovementsForExport(filters: MovementFilters = {}) {
+  const db = await getDb();
+  const clauses = compact<SQL>([
+    filters.startDate ? gte(movements.date, filters.startDate) : null,
+    filters.endDate ? lte(movements.date, filters.endDate) : null,
+  ]);
+
+  const [movementRows, locationItems] = await Promise.all([
+    db
+    .select({
+      movement: movements,
+      batch: batches,
+      material: materials,
+    })
+    .from(movements)
+    .innerJoin(batches, eq(movements.batchId, batches.id))
+    .innerJoin(materials, eq(batches.materialId, materials.id))
+    .where(clauses.length ? and(...clauses) : undefined)
+      .orderBy(desc(movements.date), desc(movements.createdAt)),
+    listLocations(),
+  ]);
+  const locationById = new Map(locationItems.map((location) => [location.id, location]));
+
+  return movementRows.map((row) => ({
+    ...row,
+    fromLocation: row.movement.fromLocationId
+      ? locationById.get(row.movement.fromLocationId) ?? null
+      : null,
+    toLocation: row.movement.toLocationId
+      ? locationById.get(row.movement.toLocationId) ?? null
+      : null,
+  }));
+}
+
+export async function getInventoryExportRows() {
+  const db = await getDb();
+  const [batchItems, locationItems, movementItems] = await Promise.all([
+    listBatches(),
+    listLocations(),
+    db.select().from(movements),
+  ]);
+  return batchItems.flatMap((row) => {
+    const detailStock = calculateBatchStock(
+      row.batch,
+      movementItems.filter((movement) => movement.batchId === row.batch.id),
+    );
+    return locationItems.map((location) => ({
+      batch: row.batch,
+      material: row.material,
+      location,
+      quantity: detailStock.get(location.id) ?? 0,
+    })).filter((rowItem) => Math.abs(rowItem.quantity) > 0.0001);
+  });
 }
 
 export async function getDashboardData() {
@@ -386,11 +763,9 @@ export async function getDashboardData() {
     completedCount,
     highPriorityCount,
     fixedCount,
-    memoCount,
     upcomingTasks,
     pinnedFixed,
     reminderPreview,
-    recentMemos,
     ganttTasks,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
@@ -404,7 +779,6 @@ export async function getDashboardData() {
       .from(tasks)
       .where(and(eq(tasks.priority, "high"), ne(tasks.status, "trashed"))),
     db.select({ value: count() }).from(fixedItems),
-    db.select({ value: count() }).from(memos),
     db
       .select()
       .from(tasks)
@@ -428,7 +802,6 @@ export async function getDashboardData() {
       .where(and(gte(reminders.reminderDate, today), eq(reminders.handled, false)))
       .orderBy(asc(reminders.reminderDate), asc(reminders.reminderTime))
       .limit(6),
-    db.select().from(memos).orderBy(desc(memos.pinned), desc(memos.updatedAt)).limit(5),
     db
       .select()
       .from(tasks)
@@ -444,12 +817,10 @@ export async function getDashboardData() {
       completedTasks: completedCount[0]?.value ?? 0,
       highPriorityTasks: highPriorityCount[0]?.value ?? 0,
       fixedItems: fixedCount[0]?.value ?? 0,
-      memos: memoCount[0]?.value ?? 0,
     },
     upcomingTasks,
     pinnedFixed,
     reminderPreview,
-    recentMemos,
     ganttTasks,
   };
 }

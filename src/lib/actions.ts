@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import type { Priority } from "@/db/schema";
+import type { BatchStatus, LocationType, MovementType, Priority } from "@/db/schema";
 import {
+  createBatch,
+  createMovement,
   completeTask,
   createTask,
   deleteFixedItem,
-  deleteMemo,
+  deleteLocation,
   deleteReminder,
   moveTaskToTrash,
   permanentlyDeleteTask,
@@ -16,11 +18,12 @@ import {
   restoreTask,
   toggleFixedDashboard,
   toggleFixedPinned,
-  toggleMemoPinned,
   toggleReminderHandled,
   updateTask,
+  updateBatch,
   upsertFixedItem,
-  upsertMemo,
+  upsertLocation,
+  upsertMaterial,
   upsertReminder,
 } from "@/lib/data";
 import { login, logout, requireAuth } from "@/lib/auth";
@@ -48,9 +51,18 @@ function revalidateApp() {
     "/trash",
     "/fixed",
     "/reminders",
-    "/memos",
     "/gantt",
+    "/materials",
+    "/materials/items",
+    "/materials/batches",
+    "/locations",
+    "/export",
   ].forEach((path) => revalidatePath(path));
+}
+
+function numberField(formData: FormData, key: string) {
+  const value = Number(text(formData, key));
+  return Number.isFinite(value) ? value : 0;
 }
 
 export async function loginAction(formData: FormData) {
@@ -191,34 +203,123 @@ export async function toggleReminderHandledAction(formData: FormData) {
   revalidateApp();
 }
 
-export async function saveMemoAction(formData: FormData) {
+export async function saveMaterialAction(formData: FormData) {
   await requireAuth();
   const id = text(formData, "id");
-  const title = text(formData, "title");
-  if (!title) redirect("/memos?error=title");
+  const name = text(formData, "name");
+  if (!name) redirect("/materials/items?error=name");
+  await upsertMaterial({
+    name,
+    type: text(formData, "type"),
+    size: text(formData, "size"),
+    unit: text(formData, "unit"),
+    remark: text(formData, "remark"),
+  }, id || undefined);
+  revalidateApp();
+  redirect("/materials/items");
+}
 
-  await upsertMemo(
+export async function saveLocationAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const name = text(formData, "name");
+  const type = text(formData, "type");
+  if (!name) redirect("/locations?error=name");
+  await upsertLocation(
     {
-      title,
-      content: text(formData, "content"),
-      tags: text(formData, "tags"),
-      pinned: bool(formData, "pinned"),
+      name,
+      type: (["warehouse", "factory", "other"].includes(type) ? type : "other") as LocationType,
     },
     id || undefined,
   );
-
   revalidateApp();
-  redirect("/memos");
+  redirect("/locations");
 }
 
-export async function deleteMemoAction(formData: FormData) {
+export async function deleteLocationAction(formData: FormData) {
   await requireAuth();
-  await deleteMemo(text(formData, "id"));
+  try {
+    await deleteLocation(text(formData, "id"));
+  } catch {
+    redirect("/locations?error=in-use");
+  }
   revalidateApp();
+  redirect("/locations");
 }
 
-export async function toggleMemoPinnedAction(formData: FormData) {
+export async function saveBatchAction(formData: FormData) {
   await requireAuth();
-  await toggleMemoPinned(text(formData, "id"), bool(formData, "next"));
+  const id = text(formData, "id");
+  const materialId = text(formData, "materialId");
+  const productionDate = text(formData, "productionDate");
+  const quantity = numberField(formData, "quantity");
+  const price = numberField(formData, "price");
+  const status = text(formData, "status");
+  if ((!id && !materialId) || !productionDate || quantity <= 0) {
+    redirect("/materials/batches?error=required");
+  }
+
+  const input = {
+    productionDate,
+    quantity,
+    price,
+    supplier: text(formData, "supplier"),
+    manufacturer: text(formData, "manufacturer"),
+    status: (["active", "used_up", "inactive"].includes(status) ? status : "active") as BatchStatus,
+    remark: text(formData, "remark"),
+  };
+
+  if (id) {
+    await updateBatch(id, input);
+  } else {
+    await createBatch({
+      ...input,
+      materialId,
+      initialLocationId: text(formData, "initialLocationId"),
+    });
+  }
   revalidateApp();
+  redirect("/materials/batches");
+}
+
+export async function createMovementAction(formData: FormData) {
+  await requireAuth();
+  const batchId = text(formData, "batchId");
+  const type = text(formData, "type");
+  const quantity = numberField(formData, "quantity");
+  const location = text(formData, "locationId");
+  const fromLocationId = text(formData, "fromLocationId");
+  const toLocationId = text(formData, "toLocationId");
+
+  const movementType = (["OUT", "TRANSFER", "RETURN", "SCRAP", "CONSUME"].includes(type)
+    ? type
+    : "OUT") as MovementType;
+
+  let from: string | null = null;
+  let to: string | null = null;
+  if (movementType === "OUT") to = toLocationId;
+  if (movementType === "TRANSFER") {
+    from = fromLocationId;
+    to = toLocationId;
+  }
+  if (movementType === "RETURN") from = fromLocationId;
+  if (movementType === "SCRAP" || movementType === "CONSUME") from = location;
+
+  try {
+    await createMovement({
+      batchId,
+      date: text(formData, "date"),
+      type: movementType,
+      fromLocationId: from,
+      toLocationId: to,
+      quantity,
+      remark: text(formData, "remark"),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/batches/${batchId}?error=${encodeURIComponent(reason)}`);
+  }
+
+  revalidateApp();
+  redirect(`/materials/batches/${batchId}`);
 }
