@@ -16,6 +16,7 @@ import {
 
 import {
   fixedItems,
+  memos,
   materials,
   batches,
   locations,
@@ -26,6 +27,7 @@ import {
   type BatchStatus,
   type FixedItem,
   type LocationType,
+  type Memo,
   type Material,
   type Movement,
   type MovementType,
@@ -54,6 +56,11 @@ type ReminderFilters = {
   search?: string;
   date?: string;
   handled?: "all" | "handled" | "open";
+};
+
+type MemoFilters = {
+  search?: string;
+  tag?: string;
 };
 
 type BatchFilters = {
@@ -414,6 +421,58 @@ export async function toggleReminderHandled(id: string, handled: boolean) {
     .where(eq(reminders.id, id));
 }
 
+export async function listMemos(filters: MemoFilters = {}) {
+  const db = await getDb();
+  const query = searchValue(filters.search);
+  const clauses = compact<SQL>([
+    filters.tag?.trim() ? ilike(memos.tags, `%${filters.tag.trim()}%`) : null,
+    query
+      ? or(ilike(memos.title, query), ilike(memos.content, query), ilike(memos.tags, query))
+      : null,
+  ]);
+
+  return db
+    .select()
+    .from(memos)
+    .where(clauses.length ? and(...clauses) : undefined)
+    .orderBy(desc(memos.pinned), desc(memos.updatedAt));
+}
+
+export async function getMemoById(id?: string | null) {
+  if (!id) return null;
+  const db = await getDb();
+  const [memo] = await db.select().from(memos).where(eq(memos.id, id)).limit(1);
+  return memo ?? null;
+}
+
+export async function upsertMemo(
+  input: Omit<Memo, "id" | "createdAt" | "updatedAt">,
+  id?: string,
+) {
+  const db = await getDb();
+  if (id) {
+    const [memo] = await db
+      .update(memos)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(memos.id, id))
+      .returning();
+    return memo;
+  }
+
+  const [memo] = await db.insert(memos).values(input).returning();
+  return memo;
+}
+
+export async function deleteMemo(id: string) {
+  const db = await getDb();
+  await db.delete(memos).where(eq(memos.id, id));
+}
+
+export async function toggleMemoPinned(id: string, pinned: boolean) {
+  const db = await getDb();
+  await db.update(memos).set({ pinned, updatedAt: new Date() }).where(eq(memos.id, id));
+}
+
 export async function listLocations() {
   const db = await getDb();
   return db.select().from(locations).orderBy(asc(locations.name));
@@ -763,9 +822,11 @@ export async function getDashboardData() {
     completedCount,
     highPriorityCount,
     fixedCount,
+    memoCount,
     upcomingTasks,
     pinnedFixed,
     reminderPreview,
+    recentMemos,
     ganttTasks,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
@@ -779,6 +840,7 @@ export async function getDashboardData() {
       .from(tasks)
       .where(and(eq(tasks.priority, "high"), ne(tasks.status, "trashed"))),
     db.select({ value: count() }).from(fixedItems),
+    db.select({ value: count() }).from(memos),
     db
       .select()
       .from(tasks)
@@ -802,6 +864,7 @@ export async function getDashboardData() {
       .where(and(gte(reminders.reminderDate, today), eq(reminders.handled, false)))
       .orderBy(asc(reminders.reminderDate), asc(reminders.reminderTime))
       .limit(6),
+    db.select().from(memos).orderBy(desc(memos.pinned), desc(memos.updatedAt)).limit(5),
     db
       .select()
       .from(tasks)
@@ -817,10 +880,12 @@ export async function getDashboardData() {
       completedTasks: completedCount[0]?.value ?? 0,
       highPriorityTasks: highPriorityCount[0]?.value ?? 0,
       fixedItems: fixedCount[0]?.value ?? 0,
+      memos: memoCount[0]?.value ?? 0,
     },
     upcomingTasks,
     pinnedFixed,
     reminderPreview,
+    recentMemos,
     ganttTasks,
   };
 }

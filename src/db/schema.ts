@@ -109,6 +109,27 @@ export const reminders = pgTable(
   ],
 );
 
+export const memos = pgTable(
+  "memos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    tags: text("tags").notNull().default(""),
+    pinned: boolean("pinned").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("memos_pinned_idx").on(table.pinned),
+    index("memos_tags_idx").on(table.tags),
+  ],
+);
+
 export const materials = pgTable(
   "materials",
   {
@@ -206,6 +227,7 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type FixedItem = typeof fixedItems.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
+export type Memo = typeof memos.$inferSelect;
 export type Material = typeof materials.$inferSelect;
 export type Batch = typeof batches.$inferSelect;
 export type Location = typeof locations.$inferSelect;

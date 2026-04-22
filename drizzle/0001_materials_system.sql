@@ -1,7 +1,6 @@
 CREATE TYPE "public"."batch_status" AS ENUM('active', 'used_up', 'inactive');--> statement-breakpoint
 CREATE TYPE "public"."location_type" AS ENUM('warehouse', 'factory', 'other');--> statement-breakpoint
 CREATE TYPE "public"."movement_type" AS ENUM('OUT', 'TRANSFER', 'RETURN', 'SCRAP', 'CONSUME');--> statement-breakpoint
-DROP TABLE IF EXISTS "memos";--> statement-breakpoint
 CREATE TABLE "materials" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,

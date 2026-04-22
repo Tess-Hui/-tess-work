@@ -110,7 +110,17 @@ async function runDatabaseInit() {
     );
   `;
 
-  await sql`DROP TABLE IF EXISTS "memos";`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS "memos" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "title" text NOT NULL,
+      "content" text NOT NULL,
+      "tags" text DEFAULT '' NOT NULL,
+      "pinned" boolean DEFAULT false NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+      "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS "materials" (
@@ -172,6 +182,8 @@ async function runDatabaseInit() {
   await sql`CREATE INDEX IF NOT EXISTS "fixed_items_pinned_idx" ON "fixed_items" USING btree ("pinned");`;
   await sql`CREATE INDEX IF NOT EXISTS "reminders_date_idx" ON "reminders" USING btree ("reminder_date");`;
   await sql`CREATE INDEX IF NOT EXISTS "reminders_handled_idx" ON "reminders" USING btree ("handled");`;
+  await sql`CREATE INDEX IF NOT EXISTS "memos_pinned_idx" ON "memos" USING btree ("pinned");`;
+  await sql`CREATE INDEX IF NOT EXISTS "memos_tags_idx" ON "memos" USING btree ("tags");`;
   await sql`CREATE INDEX IF NOT EXISTS "materials_name_idx" ON "materials" USING btree ("name");`;
   await sql`CREATE INDEX IF NOT EXISTS "materials_type_idx" ON "materials" USING btree ("type");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "locations_name_idx" ON "locations" USING btree ("name");`;

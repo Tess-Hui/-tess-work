@@ -27,7 +27,7 @@ export async function GET() {
     },
   ]);
 
-  return new Response(workbook, {
+  return new Response(new Uint8Array(workbook), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": 'attachment; filename="inventory.xlsx"',

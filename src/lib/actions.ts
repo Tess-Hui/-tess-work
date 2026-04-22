@@ -11,6 +11,7 @@ import {
   createTask,
   deleteFixedItem,
   deleteLocation,
+  deleteMemo,
   deleteReminder,
   moveTaskToTrash,
   permanentlyDeleteTask,
@@ -18,11 +19,13 @@ import {
   restoreTask,
   toggleFixedDashboard,
   toggleFixedPinned,
+  toggleMemoPinned,
   toggleReminderHandled,
   updateTask,
   updateBatch,
   upsertFixedItem,
   upsertLocation,
+  upsertMemo,
   upsertMaterial,
   upsertReminder,
 } from "@/lib/data";
@@ -51,6 +54,7 @@ function revalidateApp() {
     "/trash",
     "/fixed",
     "/reminders",
+    "/memos",
     "/gantt",
     "/materials",
     "/materials/items",
@@ -200,6 +204,38 @@ export async function deleteReminderAction(formData: FormData) {
 export async function toggleReminderHandledAction(formData: FormData) {
   await requireAuth();
   await toggleReminderHandled(text(formData, "id"), bool(formData, "next"));
+  revalidateApp();
+}
+
+export async function saveMemoAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const title = text(formData, "title");
+  if (!title) redirect("/memos?error=title");
+
+  await upsertMemo(
+    {
+      title,
+      content: text(formData, "content"),
+      tags: text(formData, "tags"),
+      pinned: bool(formData, "pinned"),
+    },
+    id || undefined,
+  );
+
+  revalidateApp();
+  redirect("/memos");
+}
+
+export async function deleteMemoAction(formData: FormData) {
+  await requireAuth();
+  await deleteMemo(text(formData, "id"));
+  revalidateApp();
+}
+
+export async function toggleMemoPinnedAction(formData: FormData) {
+  await requireAuth();
+  await toggleMemoPinned(text(formData, "id"), bool(formData, "next"));
   revalidateApp();
 }
 
