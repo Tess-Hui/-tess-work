@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { GanttPreviewCard } from "@/components/gantt-chart";
+import { InventoryVisualization } from "@/components/inventory-visualization";
 import { PriorityBadge } from "@/components/priority-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -156,6 +157,10 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+      </section>
+
+      <section className="grid gap-3">
+        <InventoryVisualization title="库存简览" items={data.inventoryPreview} compact />
       </section>
 
       <section className="grid gap-3">

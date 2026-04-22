@@ -7,16 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { saveMaterialAction } from "@/lib/actions";
 import { formatDate } from "@/lib/dates";
 import { getMaterialById, listMaterials } from "@/lib/data";
 
-type Params = { edit?: string; new?: string };
+type Params = { edit?: string; new?: string; sort?: string };
 
 export async function MaterialManager({ searchParams }: { searchParams: Params }) {
   const [items, editing] = await Promise.all([
-    listMaterials(),
+    listMaterials({ sort: searchParams.sort }),
     getMaterialById(searchParams.edit),
   ]);
 
@@ -31,6 +32,21 @@ export async function MaterialManager({ searchParams }: { searchParams: Params }
           <Link href="/materials/items?new=1#material-form">新增物料</Link>
         </Button>
       </div>
+
+      <Card>
+        <CardContent className="pt-5">
+          <form className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <Select name="sort" defaultValue={searchParams.sort ?? "created-desc"}>
+              <option value="created-desc">添加时间最新在前</option>
+              <option value="created-asc">添加时间最早在前</option>
+              <option value="name-asc">按名称排序</option>
+              <option value="latest-used">按最近使用时间</option>
+              <option value="stock-desc">按库存数量</option>
+            </Select>
+            <Button type="submit" variant="secondary">排序</Button>
+          </form>
+        </CardContent>
+      </Card>
 
       {editing || searchParams.new === "1" ? <MaterialForm material={editing} /> : null}
 

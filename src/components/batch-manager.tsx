@@ -170,15 +170,6 @@ function BatchForm({
             <Field label="物料名称">
               <Input name="materialName" defaultValue={material?.name} placeholder="手动输入物料名称" required />
             </Field>
-            <Field label="物料类型">
-              <Input name="materialType" defaultValue={material?.type} />
-            </Field>
-            <Field label="物料尺寸">
-              <Input name="materialSize" defaultValue={material?.size} />
-            </Field>
-            <Field label="单位">
-              <Input name="materialUnit" defaultValue={material?.unit} placeholder="米 / 个 / 卷 / 公斤" />
-            </Field>
             <Field label="制作日期">
               <Input name="productionDate" type="date" defaultValue={String(batch?.productionDate ?? "")} required />
             </Field>
@@ -195,7 +186,7 @@ function BatchForm({
               <Input name="manufacturer" defaultValue={batch?.manufacturer} />
             </Field>
             <Field label="初始地点">
-              <Select name="initialLocationId" defaultValue={initialLocationId} disabled={isEditing} required>
+              <Select name="initialLocationId" defaultValue={initialLocationId} required>
                 {locations.map((location) => (
                   <option key={location.id} value={location.id}>{location.name}</option>
                 ))}
@@ -209,9 +200,6 @@ function BatchForm({
               </Select>
             </Field>
           </div>
-          <Field label="物料备注">
-            <Textarea name="materialRemark" defaultValue={material?.remark} />
-          </Field>
           <Field label="备注">
             <Textarea name="remark" defaultValue={batch?.remark} />
           </Field>

@@ -11,6 +11,7 @@ import {
   createTask,
   deleteFixedItem,
   deleteLocation,
+  deleteMaterialSize,
   deleteMemo,
   deleteReminder,
   moveTaskToTrash,
@@ -25,6 +26,7 @@ import {
   updateBatch,
   upsertFixedItem,
   upsertLocation,
+  upsertMaterialSize,
   upsertMemo,
   upsertMaterial,
   upsertReminder,
@@ -59,6 +61,7 @@ function revalidateApp() {
     "/materials",
     "/materials/items",
     "/materials/batches",
+    "/material-sizes",
     "/locations",
     "/export",
   ].forEach((path) => revalidatePath(path));
@@ -255,6 +258,26 @@ export async function saveMaterialAction(formData: FormData) {
   redirect("/materials/items");
 }
 
+export async function saveMaterialSizeAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const name = text(formData, "name");
+  if (!name) redirect("/material-sizes?error=name");
+  await upsertMaterialSize({
+    name,
+    remark: text(formData, "remark"),
+  }, id || undefined);
+  revalidateApp();
+  redirect("/material-sizes");
+}
+
+export async function deleteMaterialSizeAction(formData: FormData) {
+  await requireAuth();
+  await deleteMaterialSize(text(formData, "id"));
+  revalidateApp();
+  redirect("/material-sizes");
+}
+
 export async function saveLocationAction(formData: FormData) {
   await requireAuth();
   const id = text(formData, "id");
@@ -297,15 +320,16 @@ export async function saveBatchAction(formData: FormData) {
 
   const input = {
     materialName,
-    materialType: text(formData, "materialType"),
-    materialSize: text(formData, "materialSize"),
-    materialUnit: text(formData, "materialUnit"),
-    materialRemark: text(formData, "materialRemark"),
+    materialType: "",
+    materialSize: "",
+    materialUnit: "",
+    materialRemark: "",
     productionDate,
     quantity,
     price,
     supplier: text(formData, "supplier"),
     manufacturer: text(formData, "manufacturer"),
+    initialLocationId: text(formData, "initialLocationId"),
     status: (["active", "used_up", "inactive"].includes(status) ? status : "active") as BatchStatus,
     remark: text(formData, "remark"),
   };
@@ -313,10 +337,7 @@ export async function saveBatchAction(formData: FormData) {
   if (id) {
     await updateBatch(id, input);
   } else {
-    await createBatch({
-      ...input,
-      initialLocationId: text(formData, "initialLocationId"),
-    });
+    await createBatch(input);
   }
   revalidateApp();
   redirect("/materials/batches");

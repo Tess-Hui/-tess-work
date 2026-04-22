@@ -4,6 +4,7 @@ import { Download, Package, Plus, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { InventoryVisualization } from "@/components/inventory-visualization";
 import { getMaterialHomeData } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 
@@ -71,6 +72,8 @@ export async function MaterialHome() {
           <Link href="/locations">地点管理</Link>
         </Button>
       </section>
+
+      <InventoryVisualization title="库存可视化" items={data.inventoryItems} />
 
       <Card>
         <CardHeader>

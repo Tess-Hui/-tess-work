@@ -149,6 +149,21 @@ export const materials = pgTable(
   ],
 );
 
+export const materialSizes = pgTable(
+  "material_sizes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    remark: text("remark").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("material_sizes_name_idx").on(table.name),
+  ],
+);
+
 export const locations = pgTable(
   "locations",
   {
@@ -229,6 +244,7 @@ export type FixedItem = typeof fixedItems.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
 export type Memo = typeof memos.$inferSelect;
 export type Material = typeof materials.$inferSelect;
+export type MaterialSize = typeof materialSizes.$inferSelect;
 export type Batch = typeof batches.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Movement = typeof movements.$inferSelect;

@@ -15,6 +15,13 @@
       "when": 1776823200000,
       "tag": "0001_materials_system",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776826500000,
+      "tag": "0002_material_sizes",
+      "breakpoints": true
     }
   ]
 }

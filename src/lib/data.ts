@@ -17,6 +17,7 @@ import {
 import {
   fixedItems,
   memos,
+  materialSizes,
   materials,
   batches,
   locations,
@@ -29,6 +30,7 @@ import {
   type LocationType,
   type Memo,
   type Material,
+  type MaterialSize,
   type Movement,
   type MovementType,
   type Priority,
@@ -70,6 +72,14 @@ type BatchFilters = {
   status?: BatchStatus | "all";
   supplier?: string;
   manufacturer?: string;
+};
+
+type MaterialFilters = {
+  sort?: string;
+};
+
+type MaterialSizeFilters = {
+  search?: string;
 };
 
 type MovementFilters = {
@@ -520,7 +530,7 @@ export async function deleteLocation(id: string) {
   await db.delete(locations).where(eq(locations.id, id));
 }
 
-export async function listMaterials() {
+export async function listMaterials(filters: MaterialFilters = {}) {
   const db = await getDb();
   const [materialItems, batchItems, movementItems] = await Promise.all([
     db.select().from(materials).orderBy(asc(materials.name)),
@@ -528,7 +538,7 @@ export async function listMaterials() {
     db.select().from(movements),
   ]);
 
-  return materialItems.map((material) => {
+  const items = materialItems.map((material) => {
     const materialBatches = batchItems.filter((batch) => batch.materialId === material.id);
     const currentStock = materialBatches.reduce((sum, batch) => {
       const batchMovements = movementItems.filter((movement) => movement.batchId === batch.id);
@@ -546,6 +556,20 @@ export async function listMaterials() {
 
     return { ...material, currentStock, latestUsedAt: latestMovement?.date ?? null };
   });
+
+  switch (filters.sort) {
+    case "created-asc":
+      return items.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    case "name-asc":
+      return items.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+    case "latest-used":
+      return items.sort((a, b) => String(b.latestUsedAt ?? "").localeCompare(String(a.latestUsedAt ?? "")));
+    case "stock-desc":
+      return items.sort((a, b) => b.currentStock - a.currentStock);
+    case "created-desc":
+    default:
+      return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
 }
 
 export async function getMaterialById(id?: string | null) {
@@ -571,6 +595,57 @@ export async function upsertMaterial(
 
   const [material] = await db.insert(materials).values(input).returning();
   return material;
+}
+
+export async function listMaterialSizes(filters: MaterialSizeFilters = {}) {
+  const db = await getDb();
+  const query = searchValue(filters.search);
+  return db
+    .select()
+    .from(materialSizes)
+    .where(query ? or(ilike(materialSizes.name, query), ilike(materialSizes.remark, query)) : undefined)
+    .orderBy(desc(materialSizes.createdAt));
+}
+
+export async function getMaterialSizeById(id?: string | null) {
+  if (!id) return null;
+  const db = await getDb();
+  const [size] = await db
+    .select()
+    .from(materialSizes)
+    .where(eq(materialSizes.id, id))
+    .limit(1);
+  return size ?? null;
+}
+
+export async function upsertMaterialSize(
+  input: Omit<MaterialSize, "id" | "createdAt">,
+  id?: string,
+) {
+  const db = await getDb();
+  if (id) {
+    const [size] = await db
+      .update(materialSizes)
+      .set(input)
+      .where(eq(materialSizes.id, id))
+      .returning();
+    return size;
+  }
+
+  const [size] = await db
+    .insert(materialSizes)
+    .values(input)
+    .onConflictDoUpdate({
+      target: materialSizes.name,
+      set: { remark: input.remark },
+    })
+    .returning();
+  return size;
+}
+
+export async function deleteMaterialSize(id: string) {
+  const db = await getDb();
+  await db.delete(materialSizes).where(eq(materialSizes.id, id));
 }
 
 export async function getOrCreateMaterialByName(input: {
@@ -740,6 +815,7 @@ export async function updateBatch(
     price: number;
     supplier: string;
     manufacturer: string;
+    initialLocationId?: string;
     status: BatchStatus;
     remark: string;
   },
@@ -752,6 +828,7 @@ export async function updateBatch(
     unit: input.materialUnit,
     remark: input.materialRemark,
   });
+  const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
   const [batch] = await db
     .update(batches)
     .set({
@@ -762,6 +839,7 @@ export async function updateBatch(
       totalPrice: numericValue(input.quantity * input.price),
       supplier: input.supplier,
       manufacturer: input.manufacturer,
+      initialLocationId,
       status: input.status,
       remark: input.remark,
     })
@@ -822,9 +900,13 @@ export async function getMaterialHomeData() {
     listBatches(),
     listMaterials(),
   ]);
+  const inventoryItems = [...materialItems]
+    .filter((material) => Math.abs(material.currentStock) > 0.0001)
+    .sort((a, b) => b.currentStock - a.currentStock);
 
   return {
     recentBatches: batchItems.slice(0, 5),
+    inventoryItems,
     materialCount: materialItems.length,
     batchCount: batchItems.length,
     totalStock: materialItems.reduce((sum, material) => sum + material.currentStock, 0),
@@ -903,6 +985,7 @@ export async function getDashboardData() {
     reminderPreview,
     recentMemos,
     ganttTasks,
+    inventoryPreview,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
     db
@@ -946,6 +1029,7 @@ export async function getDashboardData() {
       .where(ne(tasks.status, "trashed"))
       .orderBy(asc(tasks.plannedAt), desc(tasks.createdAt))
       .limit(8),
+    listMaterials({ sort: "stock-desc" }),
   ]);
 
   return {
@@ -961,6 +1045,9 @@ export async function getDashboardData() {
     pinnedFixed,
     reminderPreview,
     recentMemos,
+    inventoryPreview: inventoryPreview
+      .filter((material) => Math.abs(material.currentStock) > 0.0001)
+      .slice(0, 5),
     ganttTasks,
   };
 }
