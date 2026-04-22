@@ -476,6 +476,7 @@ export async function toggleMemoPinned(id: string, pinned: boolean) {
 
 export async function listLocations() {
   const db = await getDb();
+  await getDefaultLocationId(db);
   return db.select().from(locations).orderBy(asc(locations.name));
 }
 
@@ -494,26 +495,6 @@ export async function upsertLocation(
   }
 
   const [location] = await db.insert(locations).values(input).returning();
-  return location;
-}
-
-export async function getOrCreateLocationByName(name?: string) {
-  const db = await getDb();
-  const cleanName = name?.trim() || "自己仓";
-  const [existing] = await db
-    .select()
-    .from(locations)
-    .where(eq(locations.name, cleanName))
-    .limit(1);
-  if (existing) return existing;
-
-  const [location] = await db
-    .insert(locations)
-    .values({
-      name: cleanName,
-      type: cleanName === "自己仓" ? "warehouse" : "other",
-    })
-    .returning();
   return location;
 }
 
@@ -714,21 +695,19 @@ export async function createBatch(input: {
   price: number;
   supplier: string;
   manufacturer: string;
-  initialLocationName?: string;
+  initialLocationId?: string;
   status: BatchStatus;
   remark: string;
 }) {
   const db = await getDb();
-  const [material, initialLocation] = await Promise.all([
-    getOrCreateMaterialByName({
-      name: input.materialName,
-      type: input.materialType,
-      size: input.materialSize,
-      unit: input.materialUnit,
-      remark: input.materialRemark,
-    }),
-    getOrCreateLocationByName(input.initialLocationName),
-  ]);
+  const material = await getOrCreateMaterialByName({
+    name: input.materialName,
+    type: input.materialType,
+    size: input.materialSize,
+    unit: input.materialUnit,
+    remark: input.materialRemark,
+  });
+  const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
   const [batch] = await db
     .insert(batches)
     .values({
@@ -740,7 +719,7 @@ export async function createBatch(input: {
       totalPrice: numericValue(input.quantity * input.price),
       supplier: input.supplier,
       manufacturer: input.manufacturer,
-      initialLocationId: initialLocation.id,
+      initialLocationId,
       status: input.status,
       remark: input.remark,
     })

@@ -315,7 +315,7 @@ export async function saveBatchAction(formData: FormData) {
   } else {
     await createBatch({
       ...input,
-      initialLocationName: text(formData, "initialLocationName"),
+      initialLocationId: text(formData, "initialLocationId"),
     });
   }
   revalidateApp();

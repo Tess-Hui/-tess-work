@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { saveBatchAction } from "@/lib/actions";
-import { getBatchDetail, listBatches, listMaterials } from "@/lib/data";
+import { getBatchDetail, listBatches, listLocations, listMaterials } from "@/lib/data";
 
 type Params = {
   date?: string;
@@ -31,7 +31,7 @@ const statusLabels = {
 } as const;
 
 export async function BatchManager({ searchParams }: { searchParams: Params }) {
-  const [items, materialItems, editing] = await Promise.all([
+  const [items, materialItems, locationItems, editing] = await Promise.all([
     listBatches({
       date: searchParams.date,
       materialId: searchParams.materialId,
@@ -41,6 +41,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       manufacturer: searchParams.manufacturer,
     }),
     listMaterials(),
+    listLocations(),
     getBatchDetail(searchParams.edit),
   ]);
 
@@ -61,6 +62,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       {editing || searchParams.new === "1" ? (
         <BatchForm
           detail={editing}
+          locations={locationItems}
           isEditing={Boolean(editing)}
         />
       ) : null}
@@ -144,14 +146,17 @@ function BatchFilters({
 
 function BatchForm({
   detail,
+  locations,
   isEditing,
 }: {
   detail: Awaited<ReturnType<typeof getBatchDetail>>;
+  locations: Awaited<ReturnType<typeof listLocations>>;
   isEditing: boolean;
 }) {
   const batch = detail?.batch ?? null;
   const material = detail?.material ?? null;
-  const initialLocationName = detail?.initialLocation.name ?? "自己仓";
+  const defaultLocationId = locations.find((location) => location.name === "自己仓")?.id ?? locations[0]?.id ?? "";
+  const initialLocationId = batch?.initialLocationId ?? defaultLocationId;
 
   return (
     <Card id="batch-form">
@@ -190,12 +195,11 @@ function BatchForm({
               <Input name="manufacturer" defaultValue={batch?.manufacturer} />
             </Field>
             <Field label="初始地点">
-              <Input
-                name="initialLocationName"
-                defaultValue={initialLocationName}
-                readOnly={isEditing}
-                placeholder="自己仓"
-              />
+              <Select name="initialLocationId" defaultValue={initialLocationId} disabled={isEditing} required>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>{location.name}</option>
+                ))}
+              </Select>
             </Field>
             <Field label="状态">
               <Select name="status" defaultValue={batch?.status ?? "active"}>
