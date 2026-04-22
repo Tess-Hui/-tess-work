@@ -538,7 +538,7 @@ export async function listMaterials(filters: MaterialFilters = {}) {
     db.select().from(movements),
   ]);
 
-  const items = materialItems.map((material) => {
+  const perMaterialItems = materialItems.map((material) => {
     const materialBatches = batchItems.filter((batch) => batch.materialId === material.id);
     const currentStock = materialBatches.reduce((sum, batch) => {
       const batchMovements = movementItems.filter((movement) => movement.batchId === batch.id);
@@ -556,6 +556,35 @@ export async function listMaterials(filters: MaterialFilters = {}) {
 
     return { ...material, currentStock, latestUsedAt: latestMovement?.date ?? null };
   });
+
+  const grouped = new Map<string, (typeof perMaterialItems)[number]>();
+  for (const item of perMaterialItems) {
+    const key = item.name.trim() || item.id;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, item);
+      continue;
+    }
+
+    const latestUsedAt =
+      String(item.latestUsedAt ?? "") > String(existing.latestUsedAt ?? "")
+        ? item.latestUsedAt
+        : existing.latestUsedAt;
+    const representative = item.createdAt > existing.createdAt ? item : existing;
+
+    grouped.set(key, {
+      ...representative,
+      name: key,
+      type: representative.type || existing.type || item.type,
+      size: representative.size || existing.size || item.size,
+      unit: representative.unit || existing.unit || item.unit,
+      remark: representative.remark || existing.remark || item.remark,
+      currentStock: existing.currentStock + item.currentStock,
+      latestUsedAt,
+    });
+  }
+
+  const items = [...grouped.values()];
 
   switch (filters.sort) {
     case "created-asc":
