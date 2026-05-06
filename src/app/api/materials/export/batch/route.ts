@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
         ["单价", numberValue(detail.batch.price)],
         ["总价", numberValue(detail.batch.totalPrice)],
         ["仓库", detail.batch.supplier],
-        ["物料制作商", detail.batch.manufacturer],
         ["状态", detail.batch.status],
         ["备注", detail.batch.remark],
       ],

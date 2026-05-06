@@ -17,23 +17,25 @@ type Params = { edit?: string; new?: string; error?: string; type?: string };
 
 const typeLabels = {
   warehouse: "仓库",
-  factory: "物料制作商",
   other: "其他",
 } as const;
 
 export async function LocationManager({ searchParams }: { searchParams: Params }) {
   const [items, stockSummary] = await Promise.all([listLocations(), getLocationStockSummary()]);
   const editing = items.find((item) => item.id === searchParams.edit) ?? null;
-  const activeType =
-    searchParams.type === "warehouse" || searchParams.type === "factory" || searchParams.type === "other"
-      ? searchParams.type
-      : "all";
+  const activeType = searchParams.type === "warehouse" || searchParams.type === "other"
+    ? searchParams.type
+    : "all";
   const stockByLocationId = new Map(stockSummary.map((summary) => [summary.locationId, summary]));
   const filteredCards = items
-    .filter((location) => (activeType === "all" ? true : location.type === activeType))
+    .filter((location) => (activeType === "all"
+      ? true
+      : activeType === "warehouse"
+        ? location.type === "warehouse"
+        : location.type !== "warehouse"))
     .map((location) => ({
       name: location.name,
-      type: location.type,
+      type: (location.type === "warehouse" ? "warehouse" : "other") as "warehouse" | "other",
       stock: stockByLocationId.get(location.id)?.totalStock ?? 0,
       items: stockByLocationId.get(location.id)?.items ?? [],
       location,
@@ -50,7 +52,7 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-950">地点管理</h1>
-          <p className="mt-1 text-sm text-slate-500">默认只有自己仓，物料制作商或其他地点可自行新增。</p>
+          <p className="mt-1 text-sm text-slate-500">默认只有自己仓，其他地点可自行新增。</p>
         </div>
         <Button asChild variant="secondary">
           <Link href="/locations?new=1#location-form">新增地点</Link>
@@ -72,9 +74,6 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
               </FilterButton>
               <FilterButton href="/locations?type=warehouse" active={activeType === "warehouse"}>
                 仓库
-              </FilterButton>
-              <FilterButton href="/locations?type=factory" active={activeType === "factory"}>
-                物料制作商
               </FilterButton>
               <FilterButton href="/locations?type=other" active={activeType === "other"}>
                 其他
@@ -185,9 +184,11 @@ function LocationForm({
             <Input name="name" defaultValue={location?.name} required />
           </Field>
           <Field label="类型">
-            <Select name="type" defaultValue={location?.type ?? "other"}>
+            <Select
+              name="type"
+              defaultValue={location?.type === "warehouse" ? "warehouse" : "other"}
+            >
               <option value="warehouse">仓库</option>
-              <option value="factory">物料制作商</option>
               <option value="other">其他</option>
             </Select>
           </Field>

@@ -19,7 +19,6 @@ type Params = {
   materialName?: string;
   status?: string;
   supplier?: string;
-  manufacturer?: string;
   edit?: string;
   new?: string;
 };
@@ -38,7 +37,6 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       materialName: searchParams.materialName,
       status: searchParams.status as never,
       supplier: searchParams.supplier,
-      manufacturer: searchParams.manufacturer,
     }),
     listMaterials(),
     listLocations(),
@@ -85,7 +83,6 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                     <span>当前剩余：{row.currentRemaining.toFixed(2)} {row.material.unit}</span>
                     <span>物料尺寸：{row.material.size || "未填写"}</span>
                     <span>仓库：{row.batch.supplier || "未填写"}</span>
-                    <span>物料制作商：{row.batch.manufacturer || "未填写"}</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -117,7 +114,7 @@ function BatchFilters({
   return (
     <Card>
       <CardContent className="pt-5">
-        <form className="grid gap-3 md:grid-cols-[0.9fr_1fr_0.9fr_1fr_1fr_auto_auto]">
+        <form className="grid gap-3 md:grid-cols-[0.9fr_1fr_0.9fr_1fr_auto_auto]">
           <Input name="date" type="date" defaultValue={searchParams.date} />
           <Input name="materialName" defaultValue={searchParams.materialName} placeholder="物料名称" list="batch-filter-materials" />
           <datalist id="batch-filter-materials">
@@ -130,7 +127,6 @@ function BatchFilters({
             <option value="inactive">已停用</option>
           </Select>
           <Input name="supplier" defaultValue={searchParams.supplier} placeholder="仓库" />
-          <Input name="manufacturer" defaultValue={searchParams.manufacturer} placeholder="物料制作商" />
           <Button type="submit" variant="secondary">
             <Search className="h-4 w-4" />
             筛选
@@ -181,9 +177,6 @@ function BatchForm({
             </Field>
             <Field label="仓库">
               <Input name="supplier" defaultValue={batch?.supplier} />
-            </Field>
-            <Field label="物料制作商">
-              <Input name="manufacturer" defaultValue={batch?.manufacturer} />
             </Field>
             <Field label="初始地点">
               <Select name="initialLocationId" defaultValue={initialLocationId} required>

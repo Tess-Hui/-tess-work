@@ -287,7 +287,7 @@ export async function saveLocationAction(formData: FormData) {
   await upsertLocation(
     {
       name,
-      type: (["warehouse", "factory", "other"].includes(type) ? type : "other") as LocationType,
+      type: (["warehouse", "other"].includes(type) ? type : "other") as LocationType,
     },
     id || undefined,
   );
@@ -328,7 +328,7 @@ export async function saveBatchAction(formData: FormData) {
     quantity,
     price,
     supplier: text(formData, "supplier"),
-    manufacturer: text(formData, "manufacturer"),
+    manufacturer: "",
     initialLocationId: text(formData, "initialLocationId"),
     status: (["active", "used_up", "inactive"].includes(status) ? status : "active") as BatchStatus,
     remark: text(formData, "remark"),

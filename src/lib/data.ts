@@ -72,7 +72,6 @@ type BatchFilters = {
   materialName?: string;
   status?: BatchStatus | "all";
   supplier?: string;
-  manufacturer?: string;
 };
 
 type MaterialFilters = {
@@ -853,12 +852,6 @@ export async function listBatches(filters: BatchFilters = {}) {
     }
     if (filters.status && filters.status !== "all" && row.batch.status !== filters.status) return false;
     if (filters.supplier?.trim() && !row.batch.supplier.toLowerCase().includes(filters.supplier.trim().toLowerCase())) {
-      return false;
-    }
-    if (
-      filters.manufacturer?.trim() &&
-      !row.batch.manufacturer.toLowerCase().includes(filters.manufacturer.trim().toLowerCase())
-    ) {
       return false;
     }
     return true;
