@@ -30,6 +30,7 @@ import {
   upsertMemo,
   upsertMaterial,
   upsertReminder,
+  listWarehouseLocations,
 } from "@/lib/data";
 import { login, logout, requireAuth } from "@/lib/auth";
 import { parseDateInput, parseDateTimeInput } from "@/lib/dates";
@@ -318,6 +319,13 @@ export async function saveBatchAction(formData: FormData) {
     redirect("/materials/batches?error=required");
   }
 
+  const warehouseLocationId = text(formData, "warehouseLocationId");
+  const warehouseLocations = await listWarehouseLocations();
+  const warehouse = warehouseLocations.find((location) => location.id === warehouseLocationId);
+  if (!warehouse) {
+    redirect("/materials/batches?error=warehouse");
+  }
+
   const input = {
     materialName,
     materialType: "",
@@ -327,9 +335,9 @@ export async function saveBatchAction(formData: FormData) {
     productionDate,
     quantity,
     price,
-    supplier: text(formData, "supplier"),
+    supplier: warehouse.name,
     manufacturer: "",
-    initialLocationId: text(formData, "initialLocationId"),
+    initialLocationId: warehouse.id,
     status: (["active", "used_up", "inactive"].includes(status) ? status : "active") as BatchStatus,
     remark: text(formData, "remark"),
   };

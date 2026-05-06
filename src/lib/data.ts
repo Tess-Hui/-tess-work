@@ -502,6 +502,38 @@ export async function listLocations() {
   return db.select().from(locations).orderBy(asc(locations.name));
 }
 
+export async function listWarehouseLocations() {
+  const items = await listLocations();
+  return items.filter((location) => location.type === "warehouse");
+}
+
+function resolveBatchInitialWarehouseLocation(
+  batch: Batch,
+  locationItems: Awaited<ReturnType<typeof listLocations>>,
+) {
+  const warehouseByName = new Map(
+    locationItems
+      .filter((location) => location.type === "warehouse")
+      .map((location) => [location.name.trim(), location]),
+  );
+  const warehouseById = new Map(
+    locationItems
+      .filter((location) => location.type === "warehouse")
+      .map((location) => [location.id, location]),
+  );
+  const supplierName = batch.supplier?.trim();
+
+  if (supplierName && warehouseByName.has(supplierName)) {
+    return warehouseByName.get(supplierName) ?? null;
+  }
+
+  if (warehouseById.has(batch.initialLocationId)) {
+    return warehouseById.get(batch.initialLocationId) ?? null;
+  }
+
+  return locationItems.find((location) => location.id === batch.initialLocationId) ?? null;
+}
+
 async function buildInventorySummary() {
   const db = await getDb();
   const [locationItems, batchRows, movementItems] = await Promise.all([
@@ -562,7 +594,11 @@ async function buildInventorySummary() {
   for (const row of batchRows) {
     const batchMovements = movementMap.get(row.batch.id) ?? [];
     const materialName = row.material.name.trim() || row.material.id;
-    const detailStock = calculateBatchStock(row.batch, batchMovements);
+    const resolvedInitialLocation = resolveBatchInitialWarehouseLocation(row.batch, locationItems);
+    const effectiveBatch = resolvedInitialLocation
+      ? { ...row.batch, initialLocationId: resolvedInitialLocation.id }
+      : row.batch;
+    const detailStock = calculateBatchStock(effectiveBatch, batchMovements);
     const stockDistribution = locationItems
       .map((location) => ({ location, quantity: detailStock.get(location.id) ?? 0 }))
       .filter((item) => Math.abs(item.quantity) > 0.0001);
@@ -570,9 +606,15 @@ async function buildInventorySummary() {
 
     byBatch.push({
       ...row,
+      batch: effectiveBatch,
+      initialLocation: resolvedInitialLocation ?? row.initialLocation,
       currentRemaining,
       stockDistribution,
-      movements: batchMovements,
+      movements: [...batchMovements].sort(
+        (a, b) =>
+          String(b.date).localeCompare(String(a.date))
+          || b.createdAt.getTime() - a.createdAt.getTime(),
+      ),
     });
 
     const materialEntry = materialSummaryMap.get(materialName);
@@ -860,31 +902,10 @@ export async function listBatches(filters: BatchFilters = {}) {
 
 export async function getBatchDetail(id?: string | null) {
   if (!id) return null;
-  const db = await getDb();
-  const [row] = await db
-    .select({ batch: batches, material: materials, initialLocation: locations })
-    .from(batches)
-    .innerJoin(materials, eq(batches.materialId, materials.id))
-    .innerJoin(locations, eq(batches.initialLocationId, locations.id))
-    .where(eq(batches.id, id))
-    .limit(1);
+  const [summary, locationItems] = await Promise.all([getInventorySummary(), listLocations()]);
+  const row = summary.byBatch.find((item) => item.batch.id === id);
   if (!row) return null;
-
-  const [movementRows, locationItems] = await Promise.all([
-    db
-      .select()
-      .from(movements)
-      .where(eq(movements.batchId, id))
-      .orderBy(desc(movements.date), desc(movements.createdAt)),
-    listLocations(),
-  ]);
-  const stock = calculateBatchStock(row.batch, movementRows);
-  const stockDistribution = locationItems
-    .map((location) => ({ location, quantity: stock.get(location.id) ?? 0 }))
-    .filter((item) => Math.abs(item.quantity) > 0.0001);
-  const currentRemaining = stockDistribution.reduce((sum, item) => sum + item.quantity, 0);
-
-  return { ...row, movements: movementRows, locations: locationItems, stockDistribution, currentRemaining };
+  return { ...row, locations: locationItems };
 }
 
 export async function createBatch(input: {

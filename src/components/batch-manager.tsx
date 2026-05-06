@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { saveBatchAction } from "@/lib/actions";
-import { getBatchDetail, listBatches, listLocations, listMaterials } from "@/lib/data";
+import { getBatchDetail, listBatches, listMaterials, listWarehouseLocations } from "@/lib/data";
 
 type Params = {
   date?: string;
@@ -30,7 +30,7 @@ const statusLabels = {
 } as const;
 
 export async function BatchManager({ searchParams }: { searchParams: Params }) {
-  const [items, materialItems, locationItems, editing] = await Promise.all([
+  const [items, materialItems, warehouseItems, editing] = await Promise.all([
     listBatches({
       date: searchParams.date,
       materialId: searchParams.materialId,
@@ -39,7 +39,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       supplier: searchParams.supplier,
     }),
     listMaterials(),
-    listLocations(),
+    listWarehouseLocations(),
     getBatchDetail(searchParams.edit),
   ]);
 
@@ -60,7 +60,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       {editing || searchParams.new === "1" ? (
         <BatchForm
           detail={editing}
-          locations={locationItems}
+          warehouseLocations={warehouseItems}
           isEditing={Boolean(editing)}
         />
       ) : null}
@@ -142,17 +142,23 @@ function BatchFilters({
 
 function BatchForm({
   detail,
-  locations,
+  warehouseLocations,
   isEditing,
 }: {
   detail: Awaited<ReturnType<typeof getBatchDetail>>;
-  locations: Awaited<ReturnType<typeof listLocations>>;
+  warehouseLocations: Awaited<ReturnType<typeof listWarehouseLocations>>;
   isEditing: boolean;
 }) {
   const batch = detail?.batch ?? null;
   const material = detail?.material ?? null;
-  const defaultLocationId = locations.find((location) => location.name === "自己仓")?.id ?? locations[0]?.id ?? "";
-  const initialLocationId = batch?.initialLocationId ?? defaultLocationId;
+  const defaultWarehouseId =
+    warehouseLocations.find((location) => location.name === "自己仓")?.id
+    ?? warehouseLocations[0]?.id
+    ?? "";
+  const warehouseLocationId =
+    warehouseLocations.find((location) => location.name === batch?.supplier)?.id
+    ?? detail?.initialLocation.id
+    ?? defaultWarehouseId;
 
   return (
     <Card id="batch-form">
@@ -176,11 +182,8 @@ function BatchForm({
               <Input name="price" type="number" step="0.01" min="0" defaultValue={batch?.price} />
             </Field>
             <Field label="仓库">
-              <Input name="supplier" defaultValue={batch?.supplier} />
-            </Field>
-            <Field label="初始地点">
-              <Select name="initialLocationId" defaultValue={initialLocationId} required>
-                {locations.map((location) => (
+              <Select name="warehouseLocationId" defaultValue={warehouseLocationId} required>
+                {warehouseLocations.map((location) => (
                   <option key={location.id} value={location.id}>{location.name}</option>
                 ))}
               </Select>
