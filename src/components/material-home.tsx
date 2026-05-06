@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Download, Package, Plus, Warehouse } from "lucide-react";
+import { Download, Plus, Warehouse } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { InventoryVisualization } from "@/components/inventory-visualization";
+import { LocationStockVisualization } from "@/components/location-stock-visualization";
 import { getMaterialHomeData } from "@/lib/data";
 import { formatDate } from "@/lib/dates";
 
@@ -34,13 +34,7 @@ export async function MaterialHome() {
         </div>
       </div>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-slate-500">物料数量</p>
-            <p className="mt-3 text-3xl font-semibold text-slate-950">{data.materialCount}</p>
-          </CardContent>
-        </Card>
+      <section className="grid gap-3 sm:grid-cols-2">
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-slate-500">批次数量</p>
@@ -55,13 +49,7 @@ export async function MaterialHome() {
         </Card>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <Button asChild variant="secondary">
-          <Link href="/materials/items">
-            <Package className="h-4 w-4" />
-            查看物料
-          </Link>
-        </Button>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Button asChild variant="secondary">
           <Link href="/materials/batches">
             <Warehouse className="h-4 w-4" />
@@ -73,7 +61,7 @@ export async function MaterialHome() {
         </Button>
       </section>
 
-      <InventoryVisualization title="库存可视化" items={data.inventoryItems} />
+      <LocationStockVisualization title="各地点当前库存" items={data.locationStocks} />
 
       <Card>
         <CardHeader>

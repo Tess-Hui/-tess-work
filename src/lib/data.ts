@@ -490,6 +490,90 @@ export async function listLocations() {
   return db.select().from(locations).orderBy(asc(locations.name));
 }
 
+export async function getLocationStockSummary() {
+  const db = await getDb();
+  const [locationItems, materialItems, batchItems, movementItems] = await Promise.all([
+    listLocations(),
+    db.select().from(materials),
+    db.select().from(batches),
+    db.select().from(movements),
+  ]);
+
+  const locationById = new Map(locationItems.map((location) => [location.id, location]));
+  const materialById = new Map(materialItems.map((material) => [material.id, material]));
+  const movementMap = new Map<string, Movement[]>();
+
+  for (const movement of movementItems) {
+    const batchMovements = movementMap.get(movement.batchId) ?? [];
+    batchMovements.push(movement);
+    movementMap.set(movement.batchId, batchMovements);
+  }
+
+  const summaryMap = new Map<
+    string,
+    {
+      locationId: string;
+      locationName: string;
+      locationType: LocationType;
+      totalStock: number;
+      itemMap: Map<string, { materialId: string; materialName: string; stock: number }>;
+    }
+  >();
+
+  for (const location of locationItems) {
+    summaryMap.set(location.id, {
+      locationId: location.id,
+      locationName: location.name,
+      locationType: location.type,
+      totalStock: 0,
+      itemMap: new Map(),
+    });
+  }
+
+  for (const batch of batchItems) {
+    const material = materialById.get(batch.materialId);
+    if (!material) continue;
+
+    const materialName = material.name.trim() || material.id;
+    const detailStock = calculateBatchStock(batch, movementMap.get(batch.id) ?? []);
+
+    for (const [locationId, quantity] of detailStock.entries()) {
+      if (Math.abs(quantity) <= 0.0001) continue;
+
+      const location = locationById.get(locationId);
+      if (!location) continue;
+
+      const summary = summaryMap.get(locationId);
+      if (!summary) continue;
+
+      summary.totalStock += quantity;
+
+      const existingItem = summary.itemMap.get(materialName);
+      if (existingItem) {
+        existingItem.stock += quantity;
+      } else {
+        summary.itemMap.set(materialName, {
+          materialId: material.id,
+          materialName,
+          stock: quantity,
+        });
+      }
+    }
+  }
+
+  return [...summaryMap.values()]
+    .map((summary) => ({
+      locationId: summary.locationId,
+      locationName: summary.locationName,
+      locationType: summary.locationType,
+      totalStock: summary.totalStock,
+      items: [...summary.itemMap.values()]
+        .filter((item) => Math.abs(item.stock) > 0.0001)
+        .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
+    }))
+    .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
+}
+
 export async function upsertLocation(
   input: { name: string; type: LocationType },
   id?: string,
@@ -925,20 +1009,17 @@ export async function createMovement(input: {
 }
 
 export async function getMaterialHomeData() {
-  const [batchItems, materialItems] = await Promise.all([
+  const [batchItems, locationStockSummary] = await Promise.all([
     listBatches(),
-    listMaterials(),
+    getLocationStockSummary(),
   ]);
-  const inventoryItems = [...materialItems]
-    .filter((material) => Math.abs(material.currentStock) > 0.0001)
-    .sort((a, b) => b.currentStock - a.currentStock);
+  const locationStocks = locationStockSummary.filter((location) => Math.abs(location.totalStock) > 0.0001);
 
   return {
     recentBatches: batchItems.slice(0, 5),
-    inventoryItems,
-    materialCount: materialItems.length,
+    locationStocks,
     batchCount: batchItems.length,
-    totalStock: materialItems.reduce((sum, material) => sum + material.currentStock, 0),
+    totalStock: locationStockSummary.reduce((sum, location) => sum + location.totalStock, 0),
   };
 }
 
@@ -1014,7 +1095,7 @@ export async function getDashboardData() {
     reminderPreview,
     recentMemos,
     ganttTasks,
-    inventoryPreview,
+    locationStockPreview,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
     db
@@ -1058,7 +1139,7 @@ export async function getDashboardData() {
       .where(ne(tasks.status, "trashed"))
       .orderBy(asc(tasks.plannedAt), desc(tasks.createdAt))
       .limit(8),
-    listMaterials({ sort: "stock-desc" }),
+    getLocationStockSummary(),
   ]);
 
   return {
@@ -1074,8 +1155,8 @@ export async function getDashboardData() {
     pinnedFixed,
     reminderPreview,
     recentMemos,
-    inventoryPreview: inventoryPreview
-      .filter((material) => Math.abs(material.currentStock) > 0.0001)
+    locationStockPreview: locationStockPreview
+      .filter((location) => Math.abs(location.totalStock) > 0.0001)
       .slice(0, 5),
     ganttTasks,
   };

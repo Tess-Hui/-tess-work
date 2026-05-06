@@ -10,7 +10,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
-import { listLocations } from "@/lib/data";
+import { getLocationStockSummary, listLocations } from "@/lib/data";
 
 type Params = { edit?: string; new?: string; error?: string };
 
@@ -21,8 +21,9 @@ const typeLabels = {
 } as const;
 
 export async function LocationManager({ searchParams }: { searchParams: Params }) {
-  const items = await listLocations();
+  const [items, stockSummary] = await Promise.all([listLocations(), getLocationStockSummary()]);
   const editing = items.find((item) => item.id === searchParams.edit) ?? null;
+  const stockByLocationId = new Map(stockSummary.map((item) => [item.locationId, item]));
 
   return (
     <div className="grid gap-5">
@@ -54,6 +55,23 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                   <Badge className="mt-2 border-slate-200 bg-slate-50 text-slate-600">
                     {typeLabels[location.type]}
                   </Badge>
+                  <p className="mt-2 text-sm font-medium text-slate-900">
+                    当前库存：{(stockByLocationId.get(location.id)?.totalStock ?? 0).toFixed(2)}
+                  </p>
+                  {stockByLocationId.get(location.id)?.items.length ? (
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                      {stockByLocationId.get(location.id)?.items.slice(0, 3).map((item) => (
+                        <span
+                          key={`${location.id}-${item.materialName}`}
+                          className="rounded-full bg-slate-100 px-2 py-1"
+                        >
+                          {item.materialName} {item.stock.toFixed(2)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">暂无库存明细</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button asChild variant="outline" size="sm">
