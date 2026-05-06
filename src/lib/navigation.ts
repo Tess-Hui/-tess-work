@@ -9,7 +9,6 @@ import {
   Pin,
   Ruler,
   Trash2,
-  Workflow,
 } from "lucide-react";
 
 export const navItems = [
@@ -20,7 +19,6 @@ export const navItems = [
   { href: "/fixed", label: "固定事项", sub: "Fixed", icon: Pin },
   { href: "/reminders", label: "提醒事项", sub: "Reminders", icon: Bell },
   { href: "/memos", label: "备忘录", sub: "Memos", icon: NotebookText },
-  { href: "/gantt", label: "甘特图", sub: "Gantt", icon: Workflow },
   { href: "/materials", label: "物料管理", sub: "Materials", icon: Package },
   { href: "/material-sizes", label: "物料尺寸管理", sub: "Sizes", icon: Ruler },
   { href: "/export", label: "导出", sub: "Export", icon: Download },

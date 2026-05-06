@@ -6,10 +6,8 @@ import {
   NotebookText,
   Pin,
   Siren,
-  Workflow,
 } from "lucide-react";
 
-import { GanttPreviewCard } from "@/components/gantt-chart";
 import { LocationStockVisualization } from "@/components/location-stock-visualization";
 import { PriorityBadge } from "@/components/priority-badge";
 import { Badge } from "@/components/ui/badge";
@@ -161,19 +159,6 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3">
         <LocationStockVisualization title="仓库库存简览" items={data.locationStockPreview} compact />
-      </section>
-
-      <section className="grid gap-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">甘特图预览</h2>
-            <p className="text-sm text-slate-500">按天展示任务从创建到计划完成的排期。</p>
-          </div>
-          <Button asChild variant="outline">
-            <Link href="/gantt"><Workflow className="h-4 w-4" />查看全部</Link>
-          </Button>
-        </div>
-        <GanttPreviewCard tasks={data.ganttTasks} />
       </section>
     </div>
   );
