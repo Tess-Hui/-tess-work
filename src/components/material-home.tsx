@@ -61,7 +61,7 @@ export async function MaterialHome() {
         </Button>
       </section>
 
-      <LocationStockVisualization title="各地点当前库存" items={data.locationStocks} />
+      <LocationStockVisualization title="各仓库当前库存" items={data.locationStocks} />
 
       <Card>
         <CardHeader>

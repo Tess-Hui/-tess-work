@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { MapPin, Pencil, Trash2 } from "lucide-react";
 
@@ -12,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
 import { getLocationStockSummary, listLocations } from "@/lib/data";
 
-type Params = { edit?: string; new?: string; error?: string };
+type Params = { edit?: string; new?: string; error?: string; type?: string };
 
 const typeLabels = {
   warehouse: "仓库",
@@ -24,6 +25,11 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
   const [items, stockSummary] = await Promise.all([listLocations(), getLocationStockSummary()]);
   const editing = items.find((item) => item.id === searchParams.edit) ?? null;
   const stockByLocationId = new Map(stockSummary.map((item) => [item.locationId, item]));
+  const activeType =
+    searchParams.type === "warehouse" || searchParams.type === "factory" || searchParams.type === "other"
+      ? searchParams.type
+      : "all";
+  const filteredItems = items.filter((location) => (activeType === "all" ? true : location.type === activeType));
 
   return (
     <div className="grid gap-5">
@@ -43,11 +49,30 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
         </Card>
       ) : null}
 
+      <Card>
+        <CardContent className="pt-5">
+          <div className="flex flex-wrap gap-2">
+            <FilterButton href="/locations" active={activeType === "all"}>
+              全部
+            </FilterButton>
+            <FilterButton href="/locations?type=warehouse" active={activeType === "warehouse"}>
+              仓库
+            </FilterButton>
+            <FilterButton href="/locations?type=factory" active={activeType === "factory"}>
+              物料制作商
+            </FilterButton>
+            <FilterButton href="/locations?type=other" active={activeType === "other"}>
+              其他
+            </FilterButton>
+          </div>
+        </CardContent>
+      </Card>
+
       {editing || searchParams.new === "1" ? <LocationForm location={editing} /> : null}
 
-      {items.length ? (
+      {filteredItems.length ? (
         <div className="grid gap-3">
-          {items.map((location) => (
+          {filteredItems.map((location) => (
             <Card key={location.id}>
               <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -96,6 +121,22 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
         <EmptyState icon={MapPin} title="暂无地点" description="系统会自动创建自己仓。" />
       )}
     </div>
+  );
+}
+
+function FilterButton({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Button asChild variant={active ? "default" : "secondary"} size="sm">
+      <Link href={href}>{children}</Link>
+    </Button>
   );
 }
 

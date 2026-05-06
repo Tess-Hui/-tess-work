@@ -160,7 +160,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid gap-3">
-        <LocationStockVisualization title="地点库存简览" items={data.locationStockPreview} compact />
+        <LocationStockVisualization title="仓库库存简览" items={data.locationStockPreview} compact />
       </section>
 
       <section className="grid gap-3">

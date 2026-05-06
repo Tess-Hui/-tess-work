@@ -490,7 +490,9 @@ export async function listLocations() {
   return db.select().from(locations).orderBy(asc(locations.name));
 }
 
-export async function getLocationStockSummary() {
+export async function getLocationStockSummary(filters?: {
+  type?: LocationType | "all";
+}) {
   const db = await getDb();
   const [locationItems, materialItems, batchItems, movementItems] = await Promise.all([
     listLocations(),
@@ -571,6 +573,7 @@ export async function getLocationStockSummary() {
         .filter((item) => Math.abs(item.stock) > 0.0001)
         .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
     }))
+    .filter((summary) => (filters?.type && filters.type !== "all" ? summary.locationType === filters.type : true))
     .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
 }
 
@@ -1011,7 +1014,7 @@ export async function createMovement(input: {
 export async function getMaterialHomeData() {
   const [batchItems, locationStockSummary] = await Promise.all([
     listBatches(),
-    getLocationStockSummary(),
+    getLocationStockSummary({ type: "warehouse" }),
   ]);
   const locationStocks = locationStockSummary.filter((location) => Math.abs(location.totalStock) > 0.0001);
 
@@ -1139,7 +1142,7 @@ export async function getDashboardData() {
       .where(ne(tasks.status, "trashed"))
       .orderBy(asc(tasks.plannedAt), desc(tasks.createdAt))
       .limit(8),
-    getLocationStockSummary(),
+    getLocationStockSummary({ type: "warehouse" }),
   ]);
 
   return {
