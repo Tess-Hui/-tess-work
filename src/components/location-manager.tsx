@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
-import { getLocationStockSummary, listLocations } from "@/lib/data";
+import { getWarehouseStockSummary, listLocations } from "@/lib/data";
 
 type Params = { edit?: string; new?: string; error?: string; type?: string };
 
@@ -22,14 +22,66 @@ const typeLabels = {
 } as const;
 
 export async function LocationManager({ searchParams }: { searchParams: Params }) {
-  const [items, stockSummary] = await Promise.all([listLocations(), getLocationStockSummary()]);
+  const [items, warehouseSummary] = await Promise.all([listLocations(), getWarehouseStockSummary()]);
   const editing = items.find((item) => item.id === searchParams.edit) ?? null;
-  const stockByLocationId = new Map(stockSummary.map((item) => [item.locationId, item]));
   const activeType =
     searchParams.type === "warehouse" || searchParams.type === "factory" || searchParams.type === "other"
       ? searchParams.type
       : "all";
-  const filteredItems = items.filter((location) => (activeType === "all" ? true : location.type === activeType));
+  const locationByName = new Map(items.map((location) => [location.name, location]));
+  const warehouseCards = new Map(
+    warehouseSummary.map((summary) => [
+      summary.locationName,
+      {
+        name: summary.locationName,
+        type: "warehouse" as const,
+        stock: summary.totalStock,
+        items: summary.items,
+        location: locationByName.get(summary.locationName) ?? null,
+      },
+    ]),
+  );
+
+  for (const location of items.filter((item) => item.type === "warehouse")) {
+    if (!warehouseCards.has(location.name)) {
+      warehouseCards.set(location.name, {
+        name: location.name,
+        type: "warehouse" as const,
+        stock: 0,
+        items: [],
+        location,
+      });
+    }
+  }
+
+  const warehouseItems = [...warehouseCards.values()].sort(
+    (a, b) => b.stock - a.stock || a.name.localeCompare(b.name, "zh-Hans-CN"),
+  );
+  const otherLocationItems = items.filter((location) => location.type !== "warehouse");
+
+  const filteredCards =
+    activeType === "warehouse"
+      ? warehouseItems
+      : activeType === "all"
+        ? [
+            ...warehouseItems,
+            ...otherLocationItems.map((location) => ({
+              name: location.name,
+              type: location.type,
+              stock: warehouseCards.get(location.name)?.stock ?? 0,
+              items: warehouseCards.get(location.name)?.items ?? [],
+              location,
+            })),
+          ]
+        : otherLocationItems
+            .filter((location) => location.type === activeType)
+            .map((location) => ({
+              name: location.name,
+              type: location.type,
+              stock: warehouseCards.get(location.name)?.stock ?? 0,
+              items: warehouseCards.get(location.name)?.items ?? [],
+              location,
+            }));
 
   return (
     <div className="grid gap-5">
@@ -70,24 +122,24 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
 
       {editing || searchParams.new === "1" ? <LocationForm location={editing} /> : null}
 
-      {filteredItems.length ? (
+      {filteredCards.length ? (
         <div className="grid gap-3">
-          {filteredItems.map((location) => (
-            <Card key={location.id}>
+          {filteredCards.map((card) => (
+            <Card key={`${card.type}-${card.name}`}>
               <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-semibold text-slate-950">{location.name}</p>
+                  <p className="font-semibold text-slate-950">{card.name}</p>
                   <Badge className="mt-2 border-slate-200 bg-slate-50 text-slate-600">
-                    {typeLabels[location.type]}
+                    {typeLabels[card.type]}
                   </Badge>
                   <p className="mt-2 text-sm font-medium text-slate-900">
-                    当前库存：{(stockByLocationId.get(location.id)?.totalStock ?? 0).toFixed(2)}
+                    当前库存：{card.stock.toFixed(2)}
                   </p>
-                  {stockByLocationId.get(location.id)?.items.length ? (
+                  {card.items.length ? (
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                      {stockByLocationId.get(location.id)?.items.slice(0, 3).map((item) => (
+                      {card.items.slice(0, 3).map((item) => (
                         <span
-                          key={`${location.id}-${item.materialName}`}
+                          key={`${card.name}-${item.materialName}`}
                           className="rounded-full bg-slate-100 px-2 py-1"
                         >
                           {item.materialName} {item.stock.toFixed(2)}
@@ -98,21 +150,25 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                     <p className="mt-2 text-xs text-slate-500">暂无库存明细</p>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/locations?edit=${location.id}#location-form`}>
-                      <Pencil className="h-4 w-4" />
-                      编辑
-                    </Link>
-                  </Button>
-                  <form action={deleteLocationAction}>
-                    <input type="hidden" name="id" value={location.id} />
-                    <SubmitButton variant="danger" size="sm">
-                      <Trash2 className="h-4 w-4" />
-                      删除
-                    </SubmitButton>
-                  </form>
-                </div>
+                {card.location ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/locations?edit=${card.location.id}#location-form`}>
+                        <Pencil className="h-4 w-4" />
+                        编辑
+                      </Link>
+                    </Button>
+                    <form action={deleteLocationAction}>
+                      <input type="hidden" name="id" value={card.location.id} />
+                      <SubmitButton variant="danger" size="sm">
+                        <Trash2 className="h-4 w-4" />
+                        删除
+                      </SubmitButton>
+                    </form>
+                  </div>
+                ) : (
+                  <Badge className="border-amber-200 bg-amber-50 text-amber-700">未建档</Badge>
+                )}
               </CardContent>
             </Card>
           ))}

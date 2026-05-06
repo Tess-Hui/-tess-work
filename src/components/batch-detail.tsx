@@ -70,7 +70,7 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
           <span>单价：{Number(detail.batch.price).toFixed(2)}</span>
           <span>总价：{Number(detail.batch.totalPrice).toFixed(2)}</span>
           <span>初始地点：{detail.initialLocation.name}</span>
-          <span>使用商：{detail.batch.supplier || "未填写"}</span>
+          <span>仓库：{detail.batch.supplier || "未填写"}</span>
           <span>物料制作商：{detail.batch.manufacturer || "未填写"}</span>
           <span>创建：{formatDateTime(detail.batch.createdAt)}</span>
         </CardContent>

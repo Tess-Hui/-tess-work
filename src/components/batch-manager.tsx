@@ -84,7 +84,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                     <span>制作数量：{Number(row.batch.quantity).toFixed(2)} {row.material.unit}</span>
                     <span>当前剩余：{row.currentRemaining.toFixed(2)} {row.material.unit}</span>
                     <span>物料尺寸：{row.material.size || "未填写"}</span>
-                    <span>使用商：{row.batch.supplier || "未填写"}</span>
+                    <span>仓库：{row.batch.supplier || "未填写"}</span>
                     <span>物料制作商：{row.batch.manufacturer || "未填写"}</span>
                   </div>
                 </div>
@@ -129,7 +129,7 @@ function BatchFilters({
             <option value="used_up">已用完</option>
             <option value="inactive">已停用</option>
           </Select>
-          <Input name="supplier" defaultValue={searchParams.supplier} placeholder="使用商" />
+          <Input name="supplier" defaultValue={searchParams.supplier} placeholder="仓库" />
           <Input name="manufacturer" defaultValue={searchParams.manufacturer} placeholder="物料制作商" />
           <Button type="submit" variant="secondary">
             <Search className="h-4 w-4" />
@@ -179,7 +179,7 @@ function BatchForm({
             <Field label="单价">
               <Input name="price" type="number" step="0.01" min="0" defaultValue={batch?.price} />
             </Field>
-            <Field label="使用商">
+            <Field label="仓库">
               <Input name="supplier" defaultValue={batch?.supplier} />
             </Field>
             <Field label="物料制作商">

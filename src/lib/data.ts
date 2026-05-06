@@ -577,6 +577,77 @@ export async function getLocationStockSummary(filters?: {
     .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
 }
 
+export async function getWarehouseStockSummary() {
+  const db = await getDb();
+  const [materialItems, batchItems, movementItems] = await Promise.all([
+    db.select().from(materials),
+    db.select().from(batches),
+    db.select().from(movements),
+  ]);
+
+  const materialById = new Map(materialItems.map((material) => [material.id, material]));
+  const movementMap = new Map<string, Movement[]>();
+
+  for (const movement of movementItems) {
+    const batchMovements = movementMap.get(movement.batchId) ?? [];
+    batchMovements.push(movement);
+    movementMap.set(movement.batchId, batchMovements);
+  }
+
+  const summaryMap = new Map<
+    string,
+    {
+      warehouseName: string;
+      totalStock: number;
+      itemMap: Map<string, { materialId: string; materialName: string; stock: number }>;
+    }
+  >();
+
+  for (const batch of batchItems) {
+    const material = materialById.get(batch.materialId);
+    if (!material) continue;
+
+    const materialName = material.name.trim() || material.id;
+    const currentRemaining = [...calculateBatchStock(batch, movementMap.get(batch.id) ?? []).values()].reduce(
+      (sum, quantity) => sum + quantity,
+      0,
+    );
+    if (Math.abs(currentRemaining) <= 0.0001) continue;
+
+    const warehouseName = batch.supplier.trim() || "未填写仓库";
+    const existing = summaryMap.get(warehouseName) ?? {
+      warehouseName,
+      totalStock: 0,
+      itemMap: new Map<string, { materialId: string; materialName: string; stock: number }>(),
+    };
+
+    existing.totalStock += currentRemaining;
+    const existingItem = existing.itemMap.get(materialName);
+    if (existingItem) {
+      existingItem.stock += currentRemaining;
+    } else {
+      existing.itemMap.set(materialName, {
+        materialId: material.id,
+        materialName,
+        stock: currentRemaining,
+      });
+    }
+
+    summaryMap.set(warehouseName, existing);
+  }
+
+  return [...summaryMap.values()]
+    .map((summary) => ({
+      locationId: summary.warehouseName,
+      locationName: summary.warehouseName,
+      totalStock: summary.totalStock,
+      items: [...summary.itemMap.values()]
+        .filter((item) => Math.abs(item.stock) > 0.0001)
+        .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
+    }))
+    .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
+}
+
 export async function upsertLocation(
   input: { name: string; type: LocationType },
   id?: string,
@@ -1012,17 +1083,17 @@ export async function createMovement(input: {
 }
 
 export async function getMaterialHomeData() {
-  const [batchItems, locationStockSummary] = await Promise.all([
+  const [batchItems, warehouseStockSummary] = await Promise.all([
     listBatches(),
-    getLocationStockSummary({ type: "warehouse" }),
+    getWarehouseStockSummary(),
   ]);
-  const locationStocks = locationStockSummary.filter((location) => Math.abs(location.totalStock) > 0.0001);
+  const locationStocks = warehouseStockSummary.filter((location) => Math.abs(location.totalStock) > 0.0001);
 
   return {
     recentBatches: batchItems.slice(0, 5),
     locationStocks,
     batchCount: batchItems.length,
-    totalStock: locationStockSummary.reduce((sum, location) => sum + location.totalStock, 0),
+    totalStock: warehouseStockSummary.reduce((sum, location) => sum + location.totalStock, 0),
   };
 }
 
@@ -1098,7 +1169,7 @@ export async function getDashboardData() {
     reminderPreview,
     recentMemos,
     ganttTasks,
-    locationStockPreview,
+    warehouseStockPreview,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
     db
@@ -1142,7 +1213,7 @@ export async function getDashboardData() {
       .where(ne(tasks.status, "trashed"))
       .orderBy(asc(tasks.plannedAt), desc(tasks.createdAt))
       .limit(8),
-    getLocationStockSummary({ type: "warehouse" }),
+    getWarehouseStockSummary(),
   ]);
 
   return {
@@ -1158,7 +1229,7 @@ export async function getDashboardData() {
     pinnedFixed,
     reminderPreview,
     recentMemos,
-    locationStockPreview: locationStockPreview
+    locationStockPreview: warehouseStockPreview
       .filter((location) => Math.abs(location.totalStock) > 0.0001)
       .slice(0, 5),
     ganttTasks,
