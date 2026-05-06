@@ -579,12 +579,14 @@ export async function getLocationStockSummary(filters?: {
 
 export async function getWarehouseStockSummary() {
   const db = await getDb();
-  const [materialItems, batchItems, movementItems] = await Promise.all([
+  const [locationItems, materialItems, batchItems, movementItems] = await Promise.all([
+    listLocations(),
     db.select().from(materials),
     db.select().from(batches),
     db.select().from(movements),
   ]);
 
+  const locationById = new Map(locationItems.map((location) => [location.id, location]));
   const materialById = new Map(materialItems.map((material) => [material.id, material]));
   const movementMap = new Map<string, Movement[]>();
 
@@ -608,32 +610,33 @@ export async function getWarehouseStockSummary() {
     if (!material) continue;
 
     const materialName = material.name.trim() || material.id;
-    const currentRemaining = [...calculateBatchStock(batch, movementMap.get(batch.id) ?? []).values()].reduce(
-      (sum, quantity) => sum + quantity,
-      0,
-    );
-    if (Math.abs(currentRemaining) <= 0.0001) continue;
+    const detailStock = calculateBatchStock(batch, movementMap.get(batch.id) ?? []);
 
-    const warehouseName = batch.supplier.trim() || "未填写仓库";
-    const existing = summaryMap.get(warehouseName) ?? {
-      warehouseName,
-      totalStock: 0,
-      itemMap: new Map<string, { materialId: string; materialName: string; stock: number }>(),
-    };
+    for (const [locationId, quantity] of detailStock.entries()) {
+      if (Math.abs(quantity) <= 0.0001) continue;
 
-    existing.totalStock += currentRemaining;
-    const existingItem = existing.itemMap.get(materialName);
-    if (existingItem) {
-      existingItem.stock += currentRemaining;
-    } else {
-      existing.itemMap.set(materialName, {
-        materialId: material.id,
-        materialName,
-        stock: currentRemaining,
-      });
+      const location = locationById.get(locationId);
+      const warehouseName = location?.name?.trim() || batch.supplier.trim() || "未填写仓库";
+      const existing = summaryMap.get(warehouseName) ?? {
+        warehouseName,
+        totalStock: 0,
+        itemMap: new Map<string, { materialId: string; materialName: string; stock: number }>(),
+      };
+
+      existing.totalStock += quantity;
+      const existingItem = existing.itemMap.get(materialName);
+      if (existingItem) {
+        existingItem.stock += quantity;
+      } else {
+        existing.itemMap.set(materialName, {
+          materialId: material.id,
+          materialName,
+          stock: quantity,
+        });
+      }
+
+      summaryMap.set(warehouseName, existing);
     }
-
-    summaryMap.set(warehouseName, existing);
   }
 
   return [...summaryMap.values()]

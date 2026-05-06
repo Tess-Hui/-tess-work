@@ -103,19 +103,24 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
 
       <Card>
         <CardContent className="pt-5">
-          <div className="flex flex-wrap gap-2">
-            <FilterButton href="/locations" active={activeType === "all"}>
-              全部
-            </FilterButton>
-            <FilterButton href="/locations?type=warehouse" active={activeType === "warehouse"}>
-              仓库
-            </FilterButton>
-            <FilterButton href="/locations?type=factory" active={activeType === "factory"}>
-              物料制作商
-            </FilterButton>
-            <FilterButton href="/locations?type=other" active={activeType === "other"}>
-              其他
-            </FilterButton>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <FilterButton href="/locations" active={activeType === "all"}>
+                全部
+              </FilterButton>
+              <FilterButton href="/locations?type=warehouse" active={activeType === "warehouse"}>
+                仓库
+              </FilterButton>
+              <FilterButton href="/locations?type=factory" active={activeType === "factory"}>
+                物料制作商
+              </FilterButton>
+              <FilterButton href="/locations?type=other" active={activeType === "other"}>
+                其他
+              </FilterButton>
+            </div>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/locations?new=1#location-form">新增地点</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -191,7 +196,12 @@ function FilterButton({
 }) {
   return (
     <Button asChild variant={active ? "default" : "secondary"} size="sm">
-      <Link href={href}>{children}</Link>
+      <Link
+        href={href}
+        className={active ? "text-white hover:text-white focus:text-white" : "text-slate-900"}
+      >
+        {children}
+      </Link>
     </Button>
   );
 }
