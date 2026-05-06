@@ -578,77 +578,7 @@ export async function getLocationStockSummary(filters?: {
 }
 
 export async function getWarehouseStockSummary() {
-  const db = await getDb();
-  const [locationItems, materialItems, batchItems, movementItems] = await Promise.all([
-    listLocations(),
-    db.select().from(materials),
-    db.select().from(batches),
-    db.select().from(movements),
-  ]);
-
-  const locationById = new Map(locationItems.map((location) => [location.id, location]));
-  const materialById = new Map(materialItems.map((material) => [material.id, material]));
-  const movementMap = new Map<string, Movement[]>();
-
-  for (const movement of movementItems) {
-    const batchMovements = movementMap.get(movement.batchId) ?? [];
-    batchMovements.push(movement);
-    movementMap.set(movement.batchId, batchMovements);
-  }
-
-  const summaryMap = new Map<
-    string,
-    {
-      warehouseName: string;
-      totalStock: number;
-      itemMap: Map<string, { materialId: string; materialName: string; stock: number }>;
-    }
-  >();
-
-  for (const batch of batchItems) {
-    const material = materialById.get(batch.materialId);
-    if (!material) continue;
-
-    const materialName = material.name.trim() || material.id;
-    const detailStock = calculateBatchStock(batch, movementMap.get(batch.id) ?? []);
-
-    for (const [locationId, quantity] of detailStock.entries()) {
-      if (Math.abs(quantity) <= 0.0001) continue;
-
-      const location = locationById.get(locationId);
-      const warehouseName = location?.name?.trim() || batch.supplier.trim() || "未填写仓库";
-      const existing = summaryMap.get(warehouseName) ?? {
-        warehouseName,
-        totalStock: 0,
-        itemMap: new Map<string, { materialId: string; materialName: string; stock: number }>(),
-      };
-
-      existing.totalStock += quantity;
-      const existingItem = existing.itemMap.get(materialName);
-      if (existingItem) {
-        existingItem.stock += quantity;
-      } else {
-        existing.itemMap.set(materialName, {
-          materialId: material.id,
-          materialName,
-          stock: quantity,
-        });
-      }
-
-      summaryMap.set(warehouseName, existing);
-    }
-  }
-
-  return [...summaryMap.values()]
-    .map((summary) => ({
-      locationId: summary.warehouseName,
-      locationName: summary.warehouseName,
-      totalStock: summary.totalStock,
-      items: [...summary.itemMap.values()]
-        .filter((item) => Math.abs(item.stock) > 0.0001)
-        .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
-    }))
-    .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
+  return getLocationStockSummary({ type: "warehouse" });
 }
 
 export async function upsertLocation(
@@ -1086,9 +1016,10 @@ export async function createMovement(input: {
 }
 
 export async function getMaterialHomeData() {
-  const [batchItems, warehouseStockSummary] = await Promise.all([
+  const [batchItems, warehouseStockSummary, allLocationStockSummary] = await Promise.all([
     listBatches(),
     getWarehouseStockSummary(),
+    getLocationStockSummary(),
   ]);
   const locationStocks = warehouseStockSummary.filter((location) => Math.abs(location.totalStock) > 0.0001);
 
@@ -1096,7 +1027,7 @@ export async function getMaterialHomeData() {
     recentBatches: batchItems.slice(0, 5),
     locationStocks,
     batchCount: batchItems.length,
-    totalStock: warehouseStockSummary.reduce((sum, location) => sum + location.totalStock, 0),
+    totalStock: allLocationStockSummary.reduce((sum, location) => sum + location.totalStock, 0),
   };
 }
 

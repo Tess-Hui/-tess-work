@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
-import { getWarehouseStockSummary, listLocations } from "@/lib/data";
+import { getLocationStockSummary, listLocations } from "@/lib/data";
 
 type Params = { edit?: string; new?: string; error?: string; type?: string };
 
@@ -22,66 +22,28 @@ const typeLabels = {
 } as const;
 
 export async function LocationManager({ searchParams }: { searchParams: Params }) {
-  const [items, warehouseSummary] = await Promise.all([listLocations(), getWarehouseStockSummary()]);
+  const [items, stockSummary] = await Promise.all([listLocations(), getLocationStockSummary()]);
   const editing = items.find((item) => item.id === searchParams.edit) ?? null;
   const activeType =
     searchParams.type === "warehouse" || searchParams.type === "factory" || searchParams.type === "other"
       ? searchParams.type
       : "all";
-  const locationByName = new Map(items.map((location) => [location.name, location]));
-  const warehouseCards = new Map(
-    warehouseSummary.map((summary) => [
-      summary.locationName,
-      {
-        name: summary.locationName,
-        type: "warehouse" as const,
-        stock: summary.totalStock,
-        items: summary.items,
-        location: locationByName.get(summary.locationName) ?? null,
-      },
-    ]),
-  );
-
-  for (const location of items.filter((item) => item.type === "warehouse")) {
-    if (!warehouseCards.has(location.name)) {
-      warehouseCards.set(location.name, {
-        name: location.name,
-        type: "warehouse" as const,
-        stock: 0,
-        items: [],
-        location,
-      });
-    }
-  }
-
-  const warehouseItems = [...warehouseCards.values()].sort(
-    (a, b) => b.stock - a.stock || a.name.localeCompare(b.name, "zh-Hans-CN"),
-  );
-  const otherLocationItems = items.filter((location) => location.type !== "warehouse");
-
-  const filteredCards =
-    activeType === "warehouse"
-      ? warehouseItems
-      : activeType === "all"
-        ? [
-            ...warehouseItems,
-            ...otherLocationItems.map((location) => ({
-              name: location.name,
-              type: location.type,
-              stock: warehouseCards.get(location.name)?.stock ?? 0,
-              items: warehouseCards.get(location.name)?.items ?? [],
-              location,
-            })),
-          ]
-        : otherLocationItems
-            .filter((location) => location.type === activeType)
-            .map((location) => ({
-              name: location.name,
-              type: location.type,
-              stock: warehouseCards.get(location.name)?.stock ?? 0,
-              items: warehouseCards.get(location.name)?.items ?? [],
-              location,
-            }));
+  const stockByLocationId = new Map(stockSummary.map((summary) => [summary.locationId, summary]));
+  const filteredCards = items
+    .filter((location) => (activeType === "all" ? true : location.type === activeType))
+    .map((location) => ({
+      name: location.name,
+      type: location.type,
+      stock: stockByLocationId.get(location.id)?.totalStock ?? 0,
+      items: stockByLocationId.get(location.id)?.items ?? [],
+      location,
+    }))
+    .sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type.localeCompare(b.type, "en");
+      }
+      return b.stock - a.stock || a.name.localeCompare(b.name, "zh-Hans-CN");
+    });
 
   return (
     <div className="grid gap-5">
