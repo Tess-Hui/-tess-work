@@ -116,8 +116,15 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                     <p className="mt-2 text-xs text-slate-500">暂无库存明细</p>
                   )}
                 </div>
-                {card.location ? (
+                  {card.location ? (
                   <div className="flex flex-wrap gap-2">
+                    {card.location.type === "warehouse" ? (
+                      <Button asChild variant="secondary" size="sm">
+                        <Link href={`/locations/${card.location.id}/inventory`}>
+                          库存详情
+                        </Link>
+                      </Button>
+                    ) : null}
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/locations?edit=${card.location.id}#location-form`}>
                         <Pencil className="h-4 w-4" />

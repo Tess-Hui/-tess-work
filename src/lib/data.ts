@@ -99,6 +99,21 @@ type InventoryBatchSummary = {
   movements: Movement[];
 };
 
+type InventoryLocationItemSummary = {
+  materialId: string;
+  materialName: string;
+  stock: number;
+};
+
+type InventoryLocationDetailRow = {
+  batchId: string;
+  batchCode: string;
+  materialId: string;
+  materialName: string;
+  quantity: number;
+  sourceText: string;
+};
+
 function compact<T>(items: Array<T | undefined | null | false>) {
   return items.filter(Boolean) as T[];
 }
@@ -144,6 +159,10 @@ function createBatchCode() {
 
 function addStock(stock: Map<string, number>, locationId: string, quantity: number) {
   stock.set(locationId, (stock.get(locationId) ?? 0) + quantity);
+}
+
+function movementSortDesc(a: Movement, b: Movement) {
+  return String(b.date).localeCompare(String(a.date)) || b.createdAt.getTime() - a.createdAt.getTime();
 }
 
 export function calculateBatchStock(
@@ -555,6 +574,8 @@ async function buildInventorySummary() {
     movementMap.set(movement.batchId, batchMovements);
   }
 
+  const locationById = new Map(locationItems.map((location) => [location.id, location]));
+
   const summaryMap = new Map<
     string,
     {
@@ -562,7 +583,8 @@ async function buildInventorySummary() {
       locationName: string;
       locationType: LocationType;
       totalStock: number;
-      itemMap: Map<string, { materialId: string; materialName: string; stock: number }>;
+      itemMap: Map<string, InventoryLocationItemSummary>;
+      detailRows: InventoryLocationDetailRow[];
     }
   >();
   const materialSummaryMap = new Map<
@@ -588,11 +610,12 @@ async function buildInventorySummary() {
       locationType: location.type,
       totalStock: 0,
       itemMap: new Map(),
+      detailRows: [],
     });
   }
 
   for (const row of batchRows) {
-    const batchMovements = movementMap.get(row.batch.id) ?? [];
+    const batchMovements = (movementMap.get(row.batch.id) ?? []).sort(movementSortDesc);
     const materialName = row.material.name.trim() || row.material.id;
     const resolvedInitialLocation = resolveBatchInitialWarehouseLocation(row.batch, locationItems);
     const effectiveBatch = resolvedInitialLocation
@@ -610,11 +633,7 @@ async function buildInventorySummary() {
       initialLocation: resolvedInitialLocation ?? row.initialLocation,
       currentRemaining,
       stockDistribution,
-      movements: [...batchMovements].sort(
-        (a, b) =>
-          String(b.date).localeCompare(String(a.date))
-          || b.createdAt.getTime() - a.createdAt.getTime(),
-      ),
+      movements: batchMovements,
     });
 
     const materialEntry = materialSummaryMap.get(materialName);
@@ -664,6 +683,34 @@ async function buildInventorySummary() {
           stock: quantity,
         });
       }
+
+      const latestInbound = batchMovements.find((movement) => movement.toLocationId === location.id);
+      const fromName = latestInbound?.fromLocationId
+        ? locationById.get(latestInbound.fromLocationId)?.name ?? "其他地点"
+        : "";
+      let sourceText = `初始入库到${location.name}`;
+
+      if (latestInbound) {
+        const quantityText = numberValue(latestInbound.quantity);
+        if (latestInbound.type === "TRANSFER") {
+          sourceText = `从${fromName}调拨过来，数量 ${quantityText}`;
+        } else if (latestInbound.type === "OUT") {
+          sourceText = `从${fromName}发货过来，数量 ${quantityText}`;
+        } else if (latestInbound.type === "RETURN") {
+          sourceText = `从${fromName}退回，数量 ${quantityText}`;
+        } else {
+          sourceText = `最近入库到${location.name}，数量 ${quantityText}`;
+        }
+      }
+
+      summary.detailRows.push({
+        batchId: effectiveBatch.id,
+        batchCode: effectiveBatch.batchCode,
+        materialId: row.material.id,
+        materialName,
+        quantity,
+        sourceText,
+      });
     }
   }
 
@@ -676,6 +723,9 @@ async function buildInventorySummary() {
       items: [...summary.itemMap.values()]
         .filter((item) => Math.abs(item.stock) > 0.0001)
         .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
+      detailRows: summary.detailRows
+        .filter((row) => Math.abs(row.quantity) > 0.0001)
+        .sort((a, b) => b.quantity - a.quantity || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
     }))
     .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
 
@@ -699,6 +749,12 @@ export async function getLocationStockSummary(filters?: {
 
 export async function getWarehouseStockSummary() {
   return getLocationStockSummary({ type: "warehouse" });
+}
+
+export async function getLocationInventoryDetail(id?: string | null) {
+  if (!id) return null;
+  const summary = await getInventorySummary();
+  return summary.byLocation.find((location) => location.locationId === id) ?? null;
 }
 
 export async function upsertLocation(
