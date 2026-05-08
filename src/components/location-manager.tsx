@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { InventoryItemBars, formatInventoryNumber } from "@/components/inventory-item-bars";
 import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
 import { getLocationStockSummary, listLocations } from "@/lib/data";
 
@@ -90,37 +91,27 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
 
       {filteredCards.length ? (
         <div className="grid gap-3">
-          {filteredCards.map((card) => (
+          {filteredCards.map((card) => {
+            const detailHref = `/locations/${card.location.id}/inventory`;
+
+            return (
             <Card key={`${card.type}-${card.name}`}>
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold text-slate-950">{card.name}</p>
-                  <Badge className="mt-2 border-slate-200 bg-slate-50 text-slate-600">
-                    {typeLabels[card.type]}
-                  </Badge>
-                  <p className="mt-2 text-sm font-medium text-slate-900">
-                    当前库存：{card.stock.toFixed(2)}
-                  </p>
-                  {card.items.length ? (
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                      {card.items.slice(0, 3).map((item) => (
-                        <span
-                          key={`${card.name}-${item.materialName}`}
-                          className="rounded-full bg-slate-100 px-2 py-1"
-                        >
-                          {item.materialName} {item.stock.toFixed(2)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">暂无库存明细</p>
-                  )}
-                </div>
+              <CardContent className="grid gap-4 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-950">{card.name}</p>
+                    <Badge className="mt-2 border-slate-200 bg-slate-50 text-slate-600">
+                      {typeLabels[card.type]}
+                    </Badge>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      当前库存：{formatInventoryNumber(card.stock)}
+                    </p>
+                  </div>
                 {card.location ? (
                   <div className="flex flex-wrap gap-2">
                     {card.location.type === "warehouse" ? (
                       <Button asChild variant="secondary" size="sm">
-                        <Link href={`/locations/${card.location.id}/inventory`}>
+                        <Link href={detailHref}>
                           库存详情
                         </Link>
                       </Button>
@@ -142,9 +133,12 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                 ) : (
                   <Badge className="border-amber-200 bg-amber-50 text-amber-700">未建档</Badge>
                 )}
+                </div>
+                <InventoryItemBars items={card.items} limit={5} detailHref={detailHref} />
               </CardContent>
             </Card>
-          ))}
+          );
+        })}
         </div>
       ) : (
         <EmptyState icon={MapPin} title="暂无地点" description="系统会自动创建自己仓。" />
