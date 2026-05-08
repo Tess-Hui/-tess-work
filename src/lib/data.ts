@@ -1173,6 +1173,7 @@ export async function getDashboardData() {
   const today = getShanghaiDateString();
   const { start, end } = getShanghaiDayRange(today);
 
+  console.log("dashboard: loading counts");
   const [
     pendingCount,
     todayReminderCount,
@@ -1180,12 +1181,6 @@ export async function getDashboardData() {
     highPriorityCount,
     fixedCount,
     memoCount,
-    upcomingTasks,
-    pinnedFixed,
-    reminderPreview,
-    recentMemos,
-    ganttTasks,
-    inventorySummary,
   ] = await Promise.all([
     db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
     db
@@ -1199,6 +1194,16 @@ export async function getDashboardData() {
       .where(and(eq(tasks.priority, "high"), ne(tasks.status, "trashed"))),
     db.select({ value: count() }).from(fixedItems),
     db.select({ value: count() }).from(memos),
+  ]);
+  console.log("dashboard: loaded counts");
+
+  console.log("dashboard: loading previews");
+  const [
+    upcomingTasks,
+    pinnedFixed,
+    reminderPreview,
+    recentMemos,
+  ] = await Promise.all([
     db
       .select()
       .from(tasks)
@@ -1223,14 +1228,22 @@ export async function getDashboardData() {
       .orderBy(asc(reminders.reminderDate), asc(reminders.reminderTime))
       .limit(6),
     db.select().from(memos).orderBy(desc(memos.pinned), desc(memos.updatedAt)).limit(5),
-    db
-      .select()
-      .from(tasks)
-      .where(ne(tasks.status, "trashed"))
-      .orderBy(asc(tasks.plannedAt), desc(tasks.createdAt))
-      .limit(8),
-    getInventorySummary(),
   ]);
+  console.log("dashboard: loaded previews");
+
+  console.log("dashboard: loading inventory summary");
+  const locationStockPreview = await getInventorySummary()
+    .then((inventorySummary) => {
+      const preview = inventorySummary.byLocation
+        .filter((location) => location.locationType === "warehouse" && Math.abs(location.totalStock) > 0.0001)
+        .slice(0, 5);
+      console.log("dashboard: loaded inventory summary", { warehouseCount: preview.length });
+      return preview;
+    })
+    .catch((error) => {
+      console.error("dashboard: inventory summary failed", error);
+      return [];
+    });
 
   return {
     counts: {
@@ -1245,10 +1258,7 @@ export async function getDashboardData() {
     pinnedFixed,
     reminderPreview,
     recentMemos,
-    locationStockPreview: inventorySummary.byLocation
-      .filter((location) => location.locationType === "warehouse" && Math.abs(location.totalStock) > 0.0001)
-      .slice(0, 5),
-    ganttTasks,
+    locationStockPreview,
   };
 }
 

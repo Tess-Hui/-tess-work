@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 
 declare global {
   var __tessDatabaseInitPromise: Promise<void> | undefined;
+  var __tessDatabaseInitSkipLogged: boolean | undefined;
 }
 
 function getDatabaseUrl() {
@@ -15,6 +16,7 @@ function getDatabaseUrl() {
 }
 
 async function runDatabaseInit() {
+  console.log("database:init start");
   const sql = neon(getDatabaseUrl());
 
   await sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`;
@@ -213,10 +215,26 @@ async function runDatabaseInit() {
     VALUES ('自己仓', 'warehouse')
     ON CONFLICT ("name") DO NOTHING;
   `;
+  console.log("database:init complete");
+}
+
+function shouldAutoInitDatabase() {
+  const explicit = process.env.TESS_DATABASE_AUTO_INIT ?? process.env.DATABASE_AUTO_INIT;
+  if (explicit) return explicit === "true";
+  return process.env.NODE_ENV !== "production";
 }
 
 export async function ensureDatabaseReady() {
+  if (!shouldAutoInitDatabase()) {
+    if (!globalThis.__tessDatabaseInitSkipLogged) {
+      console.log("database:init skipped for request runtime");
+      globalThis.__tessDatabaseInitSkipLogged = true;
+    }
+    return;
+  }
+
   globalThis.__tessDatabaseInitPromise ??= runDatabaseInit().catch((error) => {
+    console.error("database:init failed", error);
     globalThis.__tessDatabaseInitPromise = undefined;
     throw error;
   });
