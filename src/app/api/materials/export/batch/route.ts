@@ -6,7 +6,7 @@ import { createXlsx } from "@/lib/xlsx";
 
 const movementLabels = {
   OUT: "发货",
-  TRANSFER: "调拨",
+  TRANSFER: "调货",
   RETURN: "退回",
   SCRAP: "报废",
   CONSUME: "扣减",

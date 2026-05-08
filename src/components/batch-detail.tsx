@@ -14,7 +14,7 @@ import { getBatchDetail } from "@/lib/data";
 
 const movementLabels = {
   OUT: "发货",
-  TRANSFER: "调拨",
+  TRANSFER: "调货",
   RETURN: "退回",
   SCRAP: "报废",
   CONSUME: "扣减",
@@ -31,7 +31,7 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
   if (!detail) notFound();
 
   return (
-    <div className="grid gap-5 pb-28">
+    <div className="grid gap-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -126,9 +126,9 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
         </CardContent>
       </Card>
 
-      <section className="sticky bottom-0 z-30 grid gap-3 border-t border-slate-200 bg-white/95 py-3 backdrop-blur md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-4">
         <MovementForm batchId={id} title="发货" type="OUT" locations={detail.locations} mode="to" />
-        <MovementForm batchId={id} title="调拨" type="TRANSFER" locations={detail.locations} mode="from-to" />
+        <MovementForm batchId={id} title="调货" type="TRANSFER" locations={detail.locations} mode="from-to" />
         <MovementForm batchId={id} title="退回" type="RETURN" locations={detail.locations} mode="from" />
         <MovementForm batchId={id} title="扣减" type="CONSUME" locations={detail.locations} mode="location" />
       </section>
@@ -155,7 +155,7 @@ function MovementForm({
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <form action={createMovementAction} className="grid gap-2">
+        <form action={createMovementAction} className="grid min-w-0 gap-2">
           <input type="hidden" name="batchId" value={batchId} />
           <input type="hidden" name="type" value={type} />
           <Input name="date" type="date" />

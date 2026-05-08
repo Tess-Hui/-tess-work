@@ -26,8 +26,8 @@ export function MobileNav() {
       </Button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/40" role="dialog" aria-modal="true">
-          <div className="absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-950/30 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col overflow-y-auto border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur">
             <div className="flex items-center justify-between border-b border-slate-200 p-4">
               <div>
                 <p className="text-sm font-semibold text-slate-950">Tess Work Manager</p>
@@ -53,15 +53,17 @@ export function MobileNav() {
                     href={item.href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "flex min-h-12 items-center gap-3 rounded-md px-3 text-sm font-medium",
+                      "flex min-h-12 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                       active
-                        ? "bg-slate-950 text-white"
+                        ? "bg-slate-950 text-white [&_svg]:text-white"
                         : "text-slate-700 hover:bg-slate-100",
                     )}
                   >
                     <Icon className="h-5 w-5" />
                     <span>{item.label}</span>
-                    <span className="ml-auto text-xs opacity-70">{item.sub}</span>
+                    <span className={cn("ml-auto text-xs", active ? "text-slate-200" : "text-slate-400")}>
+                      {item.sub}
+                    </span>
                   </Link>
                 );
               })}

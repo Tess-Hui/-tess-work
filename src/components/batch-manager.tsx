@@ -47,8 +47,8 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
     <div className="grid gap-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-950">批次管理</h1>
-          <p className="mt-1 text-sm text-slate-500">每一批物料独立管理，库存由流转自动计算。</p>
+          <h1 className="text-2xl font-semibold text-slate-950">物料总库存</h1>
+          <p className="mt-1 text-sm text-slate-500">按批次查看当前库存、仓库归属和流转状态。</p>
         </div>
         <Button asChild variant="secondary">
           <Link href="/materials/batches?new=1#batch-form">新建批次</Link>
@@ -98,7 +98,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
           ))}
         </div>
       ) : (
-        <EmptyState icon={Package} title="暂无批次" description="新增批次后即可记录发货、调拨和扣减。" />
+        <EmptyState icon={Package} title="暂无批次" description="新增批次后即可记录发货、调货和扣减。" />
       )}
     </div>
   );

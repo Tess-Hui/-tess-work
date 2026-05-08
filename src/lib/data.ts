@@ -693,7 +693,7 @@ async function buildInventorySummary() {
       if (latestInbound) {
         const quantityText = numberValue(latestInbound.quantity);
         if (latestInbound.type === "TRANSFER") {
-          sourceText = `从${fromName}调拨过来，数量 ${quantityText}`;
+          sourceText = `从${fromName}调货过来，数量 ${quantityText}`;
         } else if (latestInbound.type === "OUT") {
           sourceText = `从${fromName}发货过来，数量 ${quantityText}`;
         } else if (latestInbound.type === "RETURN") {

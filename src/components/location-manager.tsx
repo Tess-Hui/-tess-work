@@ -51,8 +51,8 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
     <div className="grid gap-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-950">地点管理</h1>
-          <p className="mt-1 text-sm text-slate-500">默认只有自己仓，其他地点可自行新增。</p>
+          <h1 className="text-2xl font-semibold text-slate-950">各仓库库存分布</h1>
+          <p className="mt-1 text-sm text-slate-500">查看各仓库当前库存，并管理仓库名称。</p>
         </div>
         <Button asChild variant="secondary">
           <Link href="/locations?new=1#location-form">新增地点</Link>
@@ -116,7 +116,7 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                     <p className="mt-2 text-xs text-slate-500">暂无库存明细</p>
                   )}
                 </div>
-                  {card.location ? (
+                {card.location ? (
                   <div className="flex flex-wrap gap-2">
                     {card.location.type === "warehouse" ? (
                       <Button asChild variant="secondary" size="sm">

@@ -31,9 +31,16 @@ export async function MaterialSizeManager({ searchParams }: { searchParams: Para
           <h1 className="text-2xl font-semibold text-slate-950">物料尺寸管理</h1>
           <p className="mt-1 text-sm text-slate-500">集中维护常用尺寸，便于物料录入时统一口径。</p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/material-sizes?new=1#material-size-form">新增尺寸</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {editing || searchParams.new === "1" ? (
+            <Button asChild variant="outline">
+              <Link href="/material-sizes">返回列表</Link>
+            </Button>
+          ) : null}
+          <Button asChild variant="secondary">
+            <Link href="/material-sizes?new=1#material-size-form">新增尺寸</Link>
+          </Button>
+        </div>
       </div>
 
       <Card>

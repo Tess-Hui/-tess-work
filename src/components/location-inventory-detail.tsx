@@ -29,7 +29,7 @@ export async function LocationInventoryDetail({ id }: { id: string }) {
             <Link href="/materials">返回物料管理</Link>
           </Button>
           <Button asChild variant="secondary">
-            <Link href="/locations">返回地点管理</Link>
+            <Link href="/locations">返回列表</Link>
           </Button>
         </div>
       </div>

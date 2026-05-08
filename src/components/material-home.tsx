@@ -16,7 +16,7 @@ export async function MaterialHome() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-950">物料管理</h1>
-          <p className="mt-1 text-sm text-slate-500">以批次为核心，查看库存、记录流转和导出明细。</p>
+          <p className="mt-1 text-sm text-slate-500">以批次为核心，管理库存、记录流转和导出明细。</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button asChild variant="secondary">
@@ -53,11 +53,11 @@ export async function MaterialHome() {
         <Button asChild variant="secondary">
           <Link href="/materials/batches">
             <Warehouse className="h-4 w-4" />
-            查看库存
+            物料总库存
           </Link>
         </Button>
         <Button asChild variant="secondary">
-          <Link href="/locations">地点管理</Link>
+          <Link href="/locations">各仓库库存分布</Link>
         </Button>
       </section>
 
