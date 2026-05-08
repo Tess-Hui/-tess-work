@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const mobileNavItems = navItems.filter((item) => item.href !== "/gantt");
 
   return (
     <div className="md:hidden">
@@ -27,8 +28,15 @@ export function MobileNav() {
 
       {open ? (
         <div className="fixed inset-0 z-50 bg-slate-950/30 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col overflow-y-auto border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur">
-            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+          <button
+            type="button"
+            aria-label="关闭菜单"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 top-0 z-10 flex h-dvh w-[88vw] max-w-sm flex-col border-l border-slate-200 bg-white shadow-2xl">
+            <div className="shrink-0 border-b border-slate-200 bg-white/95 p-4 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-slate-950">Tess Work Manager</p>
                 <p className="text-xs text-slate-500">Mobile menu</p>
@@ -43,8 +51,9 @@ export function MobileNav() {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <nav className="grid gap-1 p-3">
-              {navItems.map((item) => {
+            </div>
+            <nav className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto bg-white/95 p-3">
+              {mobileNavItems.map((item) => {
                 const active = pathname === item.href;
                 const Icon = item.icon;
                 return (
@@ -55,12 +64,14 @@ export function MobileNav() {
                     className={cn(
                       "flex min-h-12 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                       active
-                        ? "bg-slate-950 text-white [&_svg]:text-white"
-                        : "text-slate-700 hover:bg-slate-100",
+                        ? "bg-slate-950 text-white hover:bg-slate-950 hover:text-white [&_svg]:text-white"
+                        : "bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950",
                     )}
                   >
-                    <Icon className="h-5 w-5" />
-                    <span>{item.label}</span>
+                    <Icon className={cn("h-5 w-5 shrink-0", active ? "text-white" : "text-slate-500")} />
+                    <span className={cn("min-w-0 flex-1", active ? "text-white" : "text-slate-900")}>
+                      {item.label}
+                    </span>
                     <span className={cn("ml-auto text-xs", active ? "text-slate-200" : "text-slate-400")}>
                       {item.sub}
                     </span>
