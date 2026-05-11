@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 
 declare global {
   var __tessDatabaseInitPromise: Promise<void> | undefined;
+  var __tessDatabaseCompatPromise: Promise<void> | undefined;
   var __tessDatabaseInitSkipLogged: boolean | undefined;
 }
 
@@ -227,6 +228,41 @@ async function runDatabaseInit() {
   console.log("database:init complete");
 }
 
+async function runDatabaseCompatibilityPatch() {
+  const sql = neon(getDatabaseUrl());
+  const [movementTypeState] = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_type WHERE typname = 'movement_type'
+    ) AS "exists";
+  `;
+
+  if (movementTypeState?.exists) {
+    await sql`ALTER TYPE "public"."movement_type" ADD VALUE IF NOT EXISTS 'STOCK_IN';`;
+  }
+
+  await sql`
+    ALTER TABLE IF EXISTS "movements"
+    ADD COLUMN IF NOT EXISTS "total_price" numeric(12, 2);
+  `;
+
+  await sql`
+    ALTER TABLE IF EXISTS "batches"
+    ADD COLUMN IF NOT EXISTS "total_price" numeric(12, 2);
+  `;
+
+  const [batchesTableState] = await sql`
+    SELECT to_regclass('public.batches') AS "tableName";
+  `;
+
+  if (batchesTableState?.tableName) {
+    await sql`
+      UPDATE "batches"
+      SET "total_price" = COALESCE("total_price", "price" * "quantity")
+      WHERE "total_price" IS NULL;
+    `;
+  }
+}
+
 function shouldAutoInitDatabase() {
   const explicit = process.env.TESS_DATABASE_AUTO_INIT ?? process.env.DATABASE_AUTO_INIT;
   if (explicit) return explicit === "true";
@@ -234,6 +270,13 @@ function shouldAutoInitDatabase() {
 }
 
 export async function ensureDatabaseReady() {
+  globalThis.__tessDatabaseCompatPromise ??= runDatabaseCompatibilityPatch().catch((error) => {
+    console.error("database:compat failed", error);
+    globalThis.__tessDatabaseCompatPromise = undefined;
+    throw error;
+  });
+  await globalThis.__tessDatabaseCompatPromise;
+
   if (!shouldAutoInitDatabase()) {
     if (!globalThis.__tessDatabaseInitSkipLogged) {
       console.log("database:init skipped for request runtime");
