@@ -190,8 +190,15 @@ function BatchForm({
             <Field label="制作数量">
               <Input name="quantity" type="number" step="0.01" min="0" defaultValue={batch?.quantity} required />
             </Field>
-            <Field label="单价">
-              <Input name="price" type="number" step="0.01" min="0" defaultValue={batch?.price} />
+            <Field label="总价">
+              <Input
+                name="totalPrice"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={batch?.totalPrice}
+                placeholder="请输入这一批总价"
+              />
             </Field>
             <Field label="仓库">
               <Select name="warehouseLocationId" defaultValue={warehouseLocationId} required>

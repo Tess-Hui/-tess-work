@@ -148,6 +148,10 @@ function numericValue(value: number) {
   return value.toFixed(2);
 }
 
+function unitPriceFromTotal(quantity: number, totalPrice: number) {
+  return quantity > 0 ? totalPrice / quantity : 0;
+}
+
 function dateValue(value?: string | null) {
   return value || getShanghaiDateString();
 }
@@ -972,7 +976,7 @@ export async function createBatch(input: {
   materialRemark: string;
   productionDate: string;
   quantity: number;
-  price: number;
+  totalPrice: number;
   supplier: string;
   manufacturer: string;
   initialLocationId?: string;
@@ -988,6 +992,7 @@ export async function createBatch(input: {
     remark: input.materialRemark,
   });
   const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
+  const unitPrice = unitPriceFromTotal(input.quantity, input.totalPrice);
   const [batch] = await db
     .insert(batches)
     .values({
@@ -995,8 +1000,8 @@ export async function createBatch(input: {
       materialId: material.id,
       productionDate: input.productionDate,
       quantity: numericValue(input.quantity),
-      price: numericValue(input.price),
-      totalPrice: numericValue(input.quantity * input.price),
+      price: numericValue(unitPrice),
+      totalPrice: numericValue(input.totalPrice),
       supplier: input.supplier,
       manufacturer: input.manufacturer,
       initialLocationId,
@@ -1017,7 +1022,7 @@ export async function updateBatch(
     materialRemark: string;
     productionDate: string;
     quantity: number;
-    price: number;
+    totalPrice: number;
     supplier: string;
     manufacturer: string;
     initialLocationId?: string;
@@ -1034,14 +1039,15 @@ export async function updateBatch(
     remark: input.materialRemark,
   });
   const initialLocationId = input.initialLocationId || (await getDefaultLocationId(db));
+  const unitPrice = unitPriceFromTotal(input.quantity, input.totalPrice);
   const [batch] = await db
     .update(batches)
     .set({
       materialId: material.id,
       productionDate: input.productionDate,
       quantity: numericValue(input.quantity),
-      price: numericValue(input.price),
-      totalPrice: numericValue(input.quantity * input.price),
+      price: numericValue(unitPrice),
+      totalPrice: numericValue(input.totalPrice),
       supplier: input.supplier,
       manufacturer: input.manufacturer,
       initialLocationId,
@@ -1058,6 +1064,18 @@ export async function deleteBatch(id: string) {
   const db = await getDb();
   await db.delete(movements).where(eq(movements.batchId, id));
   await db.delete(batches).where(eq(batches.id, id));
+}
+
+export async function deleteMovement(id: string) {
+  const db = await getDb();
+  const [movement] = await db
+    .delete(movements)
+    .where(eq(movements.id, id))
+    .returning();
+  if (movement) {
+    await refreshBatchStatus(movement.batchId);
+  }
+  return movement;
 }
 
 export async function createMovement(input: {

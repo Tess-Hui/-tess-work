@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
   const batchId = request.nextUrl.searchParams.get("batchId");
   const detail = await getBatchDetail(batchId);
   if (!detail) return new Response("Batch not found", { status: 404 });
+  const quantity = numberValue(detail.batch.quantity);
+  const totalPrice = numberValue(detail.batch.totalPrice);
+  const unitPrice = quantity > 0 ? totalPrice / quantity : 0;
 
   const workbook = createXlsx([
     {
@@ -30,9 +33,9 @@ export async function GET(request: NextRequest) {
         ["物料", detail.material.name],
         ["物料尺寸", detail.material.size],
         ["制作日期", String(detail.batch.productionDate)],
-        ["制作数量", numberValue(detail.batch.quantity)],
-        ["单价", numberValue(detail.batch.price)],
-        ["总价", numberValue(detail.batch.totalPrice)],
+        ["制作数量", quantity],
+        ["单价", unitPrice],
+        ["总价", totalPrice],
         ["仓库", detail.batch.supplier],
         ["状态", detail.batch.status],
         ["备注", detail.batch.remark],

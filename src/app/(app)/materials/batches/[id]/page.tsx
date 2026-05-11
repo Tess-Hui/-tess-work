@@ -10,5 +10,5 @@ export default async function BatchDetailPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  return <BatchDetail id={id} error={query.error} />;
+  return <BatchDetail id={id} error={query.error} deletedMovement={query.deletedMovement} />;
 }

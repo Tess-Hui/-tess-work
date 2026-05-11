@@ -14,6 +14,7 @@ import {
   deleteLocation,
   deleteMaterialSize,
   deleteMemo,
+  deleteMovement,
   deleteReminder,
   moveTaskToTrash,
   permanentlyDeleteTask,
@@ -314,7 +315,7 @@ export async function saveBatchAction(formData: FormData) {
   const materialName = text(formData, "materialName");
   const productionDate = text(formData, "productionDate");
   const quantity = numberField(formData, "quantity");
-  const price = numberField(formData, "price");
+  const totalPrice = numberField(formData, "totalPrice");
   const status = text(formData, "status");
   if (!materialName || !productionDate || quantity <= 0) {
     redirect("/materials/batches?error=required");
@@ -335,7 +336,7 @@ export async function saveBatchAction(formData: FormData) {
     materialRemark: "",
     productionDate,
     quantity,
-    price,
+    totalPrice,
     supplier: warehouse.name,
     manufacturer: "",
     initialLocationId: warehouse.id,
@@ -357,6 +358,14 @@ export async function deleteBatchAction(formData: FormData) {
   await deleteBatch(text(formData, "id"));
   revalidateApp();
   redirect("/materials/batches?deleted=1");
+}
+
+export async function deleteMovementAction(formData: FormData) {
+  await requireAuth();
+  const batchId = text(formData, "batchId");
+  await deleteMovement(text(formData, "id"));
+  revalidateApp();
+  redirect(`/materials/batches/${batchId}?deletedMovement=1`);
 }
 
 export async function createMovementAction(formData: FormData) {

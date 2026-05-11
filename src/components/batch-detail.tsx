@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createMovementAction, deleteBatchAction } from "@/lib/actions";
+import { createMovementAction, deleteBatchAction, deleteMovementAction } from "@/lib/actions";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { getBatchDetail } from "@/lib/data";
 
@@ -27,9 +27,20 @@ const statusLabels = {
   inactive: "已停用",
 } as const;
 
-export async function BatchDetail({ id, error }: { id: string; error?: string }) {
+export async function BatchDetail({
+  id,
+  error,
+  deletedMovement,
+}: {
+  id: string;
+  error?: string;
+  deletedMovement?: string;
+}) {
   const detail = await getBatchDetail(id);
   if (!detail) notFound();
+  const quantity = Number(detail.batch.quantity);
+  const totalPrice = Number(detail.batch.totalPrice);
+  const unitPrice = quantity > 0 && Number.isFinite(totalPrice) ? totalPrice / quantity : 0;
 
   return (
     <div className="grid gap-5">
@@ -63,6 +74,12 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
         </Card>
       ) : null}
 
+      {deletedMovement === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">已删除流转记录。</CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>批次信息</CardTitle>
@@ -74,8 +91,8 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
           <span>物料类型：{detail.material.type || "未填写"}</span>
           <span>物料尺寸：{detail.material.size || "未填写"}</span>
           <span>单位：{detail.material.unit || "未填写"}</span>
-          <span>单价：{Number(detail.batch.price).toFixed(2)}</span>
-          <span>总价：{Number(detail.batch.totalPrice).toFixed(2)}</span>
+          <span>单价：{unitPrice.toFixed(2)}</span>
+          <span>总价：{totalPrice.toFixed(2)}</span>
           <span>仓库：{detail.batch.supplier || "未填写"}</span>
           <span>创建：{formatDateTime(detail.batch.createdAt)}</span>
         </CardContent>
@@ -112,16 +129,29 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
               const to = detail.locations.find((location) => location.id === movement.toLocationId);
               return (
                 <div key={movement.id} className="rounded-md border border-slate-200 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="border-slate-200 bg-slate-50 text-slate-600">
-                      {movementLabels[movement.type]}
-                    </Badge>
-                    <span className="text-sm text-slate-500">{formatDate(movement.date)}</span>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className="border-slate-200 bg-slate-50 text-slate-600">
+                          {movementLabels[movement.type]}
+                        </Badge>
+                        <span className="text-sm text-slate-500">{formatDate(movement.date)}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-700">
+                        {from?.name ?? "无"} → {to?.name ?? "无"}，数量 {Number(movement.quantity).toFixed(2)} {detail.material.unit}
+                      </p>
+                      {movement.remark ? <p className="mt-1 text-sm text-slate-500">{movement.remark}</p> : null}
+                    </div>
+                    <form action={deleteMovementAction}>
+                      <input type="hidden" name="id" value={movement.id} />
+                      <input type="hidden" name="batchId" value={detail.batch.id} />
+                      <ConfirmDeleteButton
+                        title="确定要删除这条流转记录吗？"
+                        description="删除后，库存会自动重新计算。"
+                        triggerText="删除"
+                      />
+                    </form>
                   </div>
-                  <p className="mt-2 text-sm text-slate-700">
-                    {from?.name ?? "无"} → {to?.name ?? "无"}，数量 {Number(movement.quantity).toFixed(2)} {detail.material.unit}
-                  </p>
-                  {movement.remark ? <p className="mt-1 text-sm text-slate-500">{movement.remark}</p> : null}
                 </div>
               );
             })
