@@ -29,17 +29,28 @@ export async function GET(request: NextRequest) {
     {
       name: "时间段流转表",
       rows: [
-        ["日期", "批次编号", "物料", "类型", "从地点", "到地点", "数量", "备注"],
-        ...rows.map((row) => [
-          String(row.movement.date),
-          row.batch.batchCode,
-          row.material.name,
-          movementLabels[row.movement.type],
-          row.movement.type === "STOCK_IN" ? "新增库存" : row.fromLocation?.name ?? "",
-          row.toLocation?.name ?? "",
-          numberValue(row.movement.quantity),
-          row.movement.remark,
-        ]),
+        ["日期", "批次编号", "物料", "类型", "从地点", "到地点", "数量", "总价", "单价", "备注"],
+        ...rows.map((row) => {
+          const quantity = numberValue(row.movement.quantity);
+          const totalPrice =
+            row.movement.type === "STOCK_IN" ? numberValue(row.movement.totalPrice) : "";
+          const unitPrice =
+            row.movement.type === "STOCK_IN" && quantity > 0
+              ? numberValue(row.movement.totalPrice) / quantity
+              : "";
+          return [
+            String(row.movement.date),
+            row.batch.batchCode,
+            row.material.name,
+            movementLabels[row.movement.type],
+            row.movement.type === "STOCK_IN" ? "新增库存" : row.fromLocation?.name ?? "",
+            row.toLocation?.name ?? "",
+            quantity,
+            totalPrice,
+            unitPrice,
+            row.movement.remark,
+          ];
+        }),
       ],
     },
   ]);

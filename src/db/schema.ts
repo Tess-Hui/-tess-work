@@ -225,6 +225,7 @@ export const movements = pgTable(
     fromLocationId: uuid("from_location_id").references(() => locations.id),
     toLocationId: uuid("to_location_id").references(() => locations.id),
     quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+    totalPrice: numeric("total_price", { precision: 12, scale: 2 }),
     remark: text("remark").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

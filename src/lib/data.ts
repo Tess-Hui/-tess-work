@@ -1087,6 +1087,7 @@ export async function createMovement(input: {
   fromLocationId?: string | null;
   toLocationId?: string | null;
   quantity: number;
+  totalPrice?: number | null;
   remark: string;
 }) {
   const detail = await getBatchDetail(input.batchId);
@@ -1119,6 +1120,7 @@ export async function createMovement(input: {
       fromLocationId,
       toLocationId,
       quantity: numericValue(input.quantity),
+      totalPrice: input.type === "STOCK_IN" ? numericValue(input.totalPrice ?? 0) : null,
       remark: input.remark,
     })
     .returning();

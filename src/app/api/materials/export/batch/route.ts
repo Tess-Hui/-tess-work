@@ -23,8 +23,19 @@ export async function GET(request: NextRequest) {
   const detail = await getBatchDetail(batchId);
   if (!detail) return new Response("Batch not found", { status: 404 });
   const quantity = numberValue(detail.batch.quantity);
-  const totalPrice = numberValue(detail.batch.totalPrice);
-  const unitPrice = quantity > 0 ? totalPrice / quantity : 0;
+  const originalTotalPrice = numberValue(detail.batch.totalPrice);
+  const stockInMovements = detail.movements.filter((movement) => movement.type === "STOCK_IN");
+  const stockInQuantity = stockInMovements.reduce(
+    (sum, movement) => sum + numberValue(movement.quantity),
+    0,
+  );
+  const stockInTotalPrice = stockInMovements.reduce(
+    (sum, movement) => sum + numberValue(movement.totalPrice),
+    0,
+  );
+  const cumulativeQuantity = quantity + stockInQuantity;
+  const cumulativeTotalPrice = originalTotalPrice + stockInTotalPrice;
+  const averageUnitPrice = cumulativeQuantity > 0 ? cumulativeTotalPrice / cumulativeQuantity : 0;
 
   const workbook = createXlsx([
     {
@@ -35,8 +46,10 @@ export async function GET(request: NextRequest) {
         ["物料尺寸", detail.material.size],
         ["制作日期", String(detail.batch.productionDate)],
         ["制作数量", quantity],
-        ["单价", unitPrice],
-        ["总价", totalPrice],
+        ["原始批次总价", originalTotalPrice],
+        ["增加库存总价", stockInTotalPrice],
+        ["累计总价", cumulativeTotalPrice],
+        ["平均单价", averageUnitPrice],
         ["仓库", detail.batch.supplier],
         ["状态", detail.batch.status],
         ["备注", detail.batch.remark],
@@ -52,17 +65,26 @@ export async function GET(request: NextRequest) {
     {
       name: "流转记录",
       rows: [
-        ["日期", "类型", "从地点", "到地点", "数量", "备注"],
+        ["日期", "类型", "从地点", "到地点", "数量", "总价", "单价", "备注"],
         ...detail.movements.map((movement) => {
           const from = detail.locations.find((location) => location.id === movement.fromLocationId);
           const to = detail.locations.find((location) => location.id === movement.toLocationId);
           const fromName = movement.type === "STOCK_IN" ? "新增库存" : from?.name ?? "";
+          const movementQuantity = numberValue(movement.quantity);
+          const movementTotalPrice =
+            movement.type === "STOCK_IN" ? numberValue(movement.totalPrice) : "";
+          const movementUnitPrice =
+            movement.type === "STOCK_IN" && movementQuantity > 0
+              ? numberValue(movement.totalPrice) / movementQuantity
+              : "";
           return [
             String(movement.date),
             movementLabels[movement.type],
             fromName,
             to?.name ?? "",
-            numberValue(movement.quantity),
+            movementQuantity,
+            movementTotalPrice,
+            movementUnitPrice,
             movement.remark,
           ];
         }),

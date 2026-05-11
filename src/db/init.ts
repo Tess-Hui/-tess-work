@@ -185,9 +185,14 @@ async function runDatabaseInit() {
       "from_location_id" uuid REFERENCES "locations"("id"),
       "to_location_id" uuid REFERENCES "locations"("id"),
       "quantity" numeric(12, 2) NOT NULL,
+      "total_price" numeric(12, 2),
       "remark" text DEFAULT '' NOT NULL,
       "created_at" timestamp with time zone DEFAULT now() NOT NULL
     );
+  `;
+
+  await sql`
+    ALTER TABLE "movements" ADD COLUMN IF NOT EXISTS "total_price" numeric(12, 2);
   `;
 
   await sql`CREATE INDEX IF NOT EXISTS "tasks_status_idx" ON "tasks" USING btree ("status");`;

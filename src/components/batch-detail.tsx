@@ -37,6 +37,13 @@ function formatQuantity(value: number) {
   }).format(value);
 }
 
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function stockBarWidth(quantity: number, maxQuantity: number) {
   if (quantity <= 0 || maxQuantity <= 0) return "0%";
   return `${Math.max(4, Math.min(100, (quantity / maxQuantity) * 100))}%`;
@@ -76,8 +83,22 @@ export async function BatchDetail({
   const detail = await getBatchDetail(id);
   if (!detail) notFound();
   const quantity = Number(detail.batch.quantity);
-  const totalPrice = Number(detail.batch.totalPrice);
-  const unitPrice = quantity > 0 && Number.isFinite(totalPrice) ? totalPrice / quantity : 0;
+  const originalTotalPrice = Number(detail.batch.totalPrice);
+  const stockInMovements = detail.movements.filter((movement) => movement.type === "STOCK_IN");
+  const stockInQuantity = stockInMovements.reduce(
+    (sum, movement) => sum + Number(movement.quantity),
+    0,
+  );
+  const stockInTotalPrice = stockInMovements.reduce(
+    (sum, movement) => sum + Number(movement.totalPrice ?? 0),
+    0,
+  );
+  const cumulativeQuantity = quantity + stockInQuantity;
+  const cumulativeTotalPrice = originalTotalPrice + stockInTotalPrice;
+  const averageUnitPrice =
+    cumulativeQuantity > 0 && Number.isFinite(cumulativeTotalPrice)
+      ? cumulativeTotalPrice / cumulativeQuantity
+      : 0;
   const maxDistributionQuantity = Math.max(
     0,
     ...detail.stockDistribution.map((item) => item.quantity),
@@ -132,8 +153,10 @@ export async function BatchDetail({
           <span>物料类型：{detail.material.type || "未填写"}</span>
           <span>物料尺寸：{detail.material.size || "未填写"}</span>
           <span>单位：{detail.material.unit || "未填写"}</span>
-          <span>单价：{unitPrice.toFixed(2)}</span>
-          <span>总价：{totalPrice.toFixed(2)}</span>
+          <span>原始总价：{formatMoney(originalTotalPrice)}</span>
+          <span>增加库存总价：{formatMoney(stockInTotalPrice)}</span>
+          <span>累计总价：{formatMoney(cumulativeTotalPrice)}</span>
+          <span>平均单价：{formatMoney(averageUnitPrice)}</span>
           <span>仓库：{detail.batch.supplier || "未填写"}</span>
           <span>创建：{formatDateTime(detail.batch.createdAt)}</span>
         </CardContent>
@@ -191,6 +214,11 @@ export async function BatchDetail({
                     ? `${from?.name ?? "无"} → 已扣减`
                     : `${from?.name ?? "无"} → ${to?.name ?? "无"}`;
               const movementQuantity = Number(movement.quantity);
+              const movementTotalPrice = Number(movement.totalPrice ?? 0);
+              const movementUnitPrice =
+                movementQuantity > 0 && Number.isFinite(movementTotalPrice)
+                  ? movementTotalPrice / movementQuantity
+                  : 0;
               return (
                 <div key={movement.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -210,6 +238,22 @@ export async function BatchDetail({
                           {formatQuantity(movementQuantity)} {detail.material.unit}
                         </span>
                       </p>
+                      {movement.type === "STOCK_IN" ? (
+                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                          <span>
+                            总价：
+                            <span className="font-semibold text-slate-950">
+                              {formatMoney(movementTotalPrice)}
+                            </span>
+                          </span>
+                          <span>
+                            单价：
+                            <span className="font-semibold text-slate-950">
+                              {formatMoney(movementUnitPrice)}
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
                       {movement.remark ? <p className="mt-1 text-sm text-slate-500">{movement.remark}</p> : null}
                     </div>
                     <form action={deleteMovementAction}>
@@ -301,6 +345,16 @@ function MovementForm({
             </Select>
           ) : null}
           <Input name="quantity" type="number" step="0.01" min="0" placeholder="数量" required />
+          {type === "STOCK_IN" ? (
+            <Input
+              name="movementTotalPrice"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="请输入本次增加库存的总价"
+              required
+            />
+          ) : null}
           <Textarea name="remark" placeholder="备注" />
           <SubmitButton size="sm">{title}</SubmitButton>
         </form>

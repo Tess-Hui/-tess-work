@@ -373,6 +373,7 @@ export async function createMovementAction(formData: FormData) {
   const batchId = text(formData, "batchId");
   const type = text(formData, "type");
   const quantity = numberField(formData, "quantity");
+  const movementTotalPrice = numberField(formData, "movementTotalPrice");
   const location = text(formData, "locationId");
   const fromLocationId = text(formData, "fromLocationId");
   const toLocationId = text(formData, "toLocationId");
@@ -400,6 +401,7 @@ export async function createMovementAction(formData: FormData) {
       fromLocationId: from,
       toLocationId: to,
       quantity,
+      totalPrice: movementType === "STOCK_IN" ? movementTotalPrice : null,
       remark: text(formData, "remark"),
     });
   } catch (error) {
