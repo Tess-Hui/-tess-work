@@ -26,6 +26,7 @@ import {
   toggleReminderHandled,
   updateTask,
   updateBatch,
+  updateMovement,
   upsertFixedItem,
   upsertLocation,
   upsertMaterialSize,
@@ -407,6 +408,52 @@ export async function createMovementAction(formData: FormData) {
   } catch (error) {
     const reason = error instanceof Error ? error.message : "failed";
     redirect(`/materials/batches/${batchId}?error=${encodeURIComponent(reason)}`);
+  }
+
+  revalidateApp();
+  redirect(`/materials/batches/${batchId}`);
+}
+
+export async function updateMovementAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const batchId = text(formData, "batchId");
+  const type = text(formData, "type");
+  const quantity = numberField(formData, "quantity");
+  const movementTotalPrice = numberField(formData, "movementTotalPrice");
+  const location = text(formData, "locationId");
+  const fromLocationId = text(formData, "fromLocationId");
+  const toLocationId = text(formData, "toLocationId");
+  const movementType = (["OUT", "TRANSFER", "RETURN", "SCRAP", "CONSUME", "STOCK_IN"].includes(type)
+    ? type
+    : "OUT") as MovementType;
+
+  let from: string | null = null;
+  let to: string | null = null;
+  if (movementType === "OUT") to = toLocationId;
+  if (movementType === "TRANSFER") {
+    from = fromLocationId;
+    to = toLocationId;
+  }
+  if (movementType === "RETURN") from = fromLocationId;
+  if (movementType === "SCRAP" || movementType === "CONSUME") from = location;
+  if (movementType === "STOCK_IN") to = toLocationId;
+
+  try {
+    await updateMovement({
+      id,
+      batchId,
+      date: text(formData, "date"),
+      type: movementType,
+      fromLocationId: from,
+      toLocationId: to,
+      quantity,
+      totalPrice: movementType === "STOCK_IN" ? movementTotalPrice : null,
+      remark: text(formData, "remark"),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/batches/${batchId}?error=${encodeURIComponent(reason)}&editMovement=${id}`);
   }
 
   revalidateApp();

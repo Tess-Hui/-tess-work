@@ -195,6 +195,23 @@ export function calculateBatchStock(
   return stock;
 }
 
+function normalizeMovementLocations(input: {
+  type: MovementType;
+  fromLocationId?: string | null;
+  toLocationId?: string | null;
+}, defaultLocationId: string) {
+  const fromLocationId =
+    input.type === "OUT" && !input.fromLocationId
+      ? defaultLocationId
+      : input.fromLocationId || null;
+  const toLocationId =
+    input.type === "RETURN" && !input.toLocationId
+      ? defaultLocationId
+      : input.toLocationId || null;
+
+  return { fromLocationId, toLocationId };
+}
+
 async function getDefaultLocationId(db: Awaited<ReturnType<typeof getDb>>) {
   const [existing] = await db
     .select()
@@ -1115,14 +1132,7 @@ export async function createMovement(input: {
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
   const db = await getDb();
   const defaultLocationId = await getDefaultLocationId(db);
-  const fromLocationId =
-    input.type === "OUT" && !input.fromLocationId
-      ? defaultLocationId
-      : input.fromLocationId || null;
-  const toLocationId =
-    input.type === "RETURN" && !input.toLocationId
-      ? defaultLocationId
-      : input.toLocationId || null;
+  const { fromLocationId, toLocationId } = normalizeMovementLocations(input, defaultLocationId);
 
   if (fromLocationId) {
     const available = detail.stockDistribution.find(
@@ -1144,6 +1154,55 @@ export async function createMovement(input: {
       remark: input.remark,
     })
     .returning();
+  await refreshBatchStatus(input.batchId);
+  return movement;
+}
+
+export async function updateMovement(input: {
+  id: string;
+  batchId: string;
+  date: string;
+  type: MovementType;
+  fromLocationId?: string | null;
+  toLocationId?: string | null;
+  quantity: number;
+  totalPrice?: number | null;
+  remark: string;
+}) {
+  if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  const db = await getDb();
+  const [batch] = await db.select().from(batches).where(eq(batches.id, input.batchId)).limit(1);
+  if (!batch) throw new Error("BATCH_NOT_FOUND");
+
+  const movementItems = await db
+    .select()
+    .from(movements)
+    .where(eq(movements.batchId, input.batchId));
+  const defaultLocationId = await getDefaultLocationId(db);
+  const { fromLocationId, toLocationId } = normalizeMovementLocations(input, defaultLocationId);
+
+  if (fromLocationId) {
+    const stockWithoutCurrentMovement = calculateBatchStock(
+      batch,
+      movementItems.filter((movement) => movement.id !== input.id),
+    );
+    const available = stockWithoutCurrentMovement.get(fromLocationId) ?? 0;
+    if (available + 0.0001 < input.quantity) throw new Error("INSUFFICIENT_STOCK");
+  }
+
+  const [movement] = await db
+    .update(movements)
+    .set({
+      date: dateValue(input.date),
+      fromLocationId,
+      toLocationId,
+      quantity: numericValue(input.quantity),
+      totalPrice: input.type === "STOCK_IN" ? numericValue(input.totalPrice ?? 0) : null,
+      remark: input.remark,
+    })
+    .where(and(eq(movements.id, input.id), eq(movements.batchId, input.batchId), eq(movements.type, input.type)))
+    .returning();
+
   await refreshBatchStatus(input.batchId);
   return movement;
 }

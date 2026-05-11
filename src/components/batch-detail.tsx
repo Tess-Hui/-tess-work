@@ -9,7 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createMovementAction, deleteBatchAction, deleteMovementAction } from "@/lib/actions";
+import {
+  createMovementAction,
+  deleteBatchAction,
+  deleteMovementAction,
+  updateMovementAction,
+} from "@/lib/actions";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { getBatchDetail } from "@/lib/data";
 
@@ -75,10 +80,12 @@ export async function BatchDetail({
   id,
   error,
   deletedMovement,
+  editMovementId,
 }: {
   id: string;
   error?: string;
   deletedMovement?: string;
+  editMovementId?: string;
 }) {
   const detail = await getBatchDetail(id);
   if (!detail) notFound();
@@ -220,7 +227,7 @@ export async function BatchDetail({
                   ? movementTotalPrice / movementQuantity
                   : 0;
               return (
-                <div key={movement.id} className="rounded-md border border-slate-200 p-3">
+                <div key={movement.id} className="grid gap-3 rounded-md border border-slate-200 p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -256,16 +263,39 @@ export async function BatchDetail({
                       ) : null}
                       {movement.remark ? <p className="mt-1 text-sm text-slate-500">{movement.remark}</p> : null}
                     </div>
-                    <form action={deleteMovementAction}>
-                      <input type="hidden" name="id" value={movement.id} />
-                      <input type="hidden" name="batchId" value={detail.batch.id} />
-                      <ConfirmDeleteButton
-                        title="确定要删除这条流转记录吗？"
-                        description="删除后，库存会自动重新计算。"
-                        triggerText="删除"
-                      />
-                    </form>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/materials/batches/${detail.batch.id}?editMovement=${movement.id}#movement-${movement.id}`}>
+                          修改
+                        </Link>
+                      </Button>
+                      <form action={deleteMovementAction}>
+                        <input type="hidden" name="id" value={movement.id} />
+                        <input type="hidden" name="batchId" value={detail.batch.id} />
+                        <ConfirmDeleteButton
+                          title="确定要删除这条流转记录吗？"
+                          description="删除后，库存会自动重新计算。"
+                          triggerText="删除"
+                        />
+                      </form>
+                    </div>
                   </div>
+                  {editMovementId === movement.id ? (
+                    <div id={`movement-${movement.id}`} className="rounded-md border border-emerald-100 bg-emerald-50/40 p-3">
+                      <MovementForm
+                        batchId={detail.batch.id}
+                        title={`修改${movementLabels[movement.type]}`}
+                        type={movement.type}
+                        locations={detail.locations}
+                        mode={movementMode(movement.type)}
+                        movement={movement}
+                        submitLabel="保存修改"
+                        action={updateMovementAction}
+                        cancelHref={`/materials/batches/${detail.batch.id}`}
+                        toPlaceholder={movement.type === "STOCK_IN" ? "增加到哪个仓库" : "到哪里"}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               );
             })
@@ -302,6 +332,10 @@ function MovementForm({
   locations,
   mode,
   toPlaceholder = "到哪里",
+  movement,
+  submitLabel,
+  action = createMovementAction,
+  cancelHref,
 }: {
   batchId: string;
   title: string;
@@ -309,19 +343,24 @@ function MovementForm({
   locations: NonNullable<Awaited<ReturnType<typeof getBatchDetail>>>["locations"];
   mode: "to" | "from-to" | "from" | "location";
   toPlaceholder?: string;
+  movement?: NonNullable<Awaited<ReturnType<typeof getBatchDetail>>>["movements"][number];
+  submitLabel?: string;
+  action?: typeof createMovementAction | typeof updateMovementAction;
+  cancelHref?: string;
 }) {
   return (
-    <Card>
+    <Card className={movement ? "border-0 bg-transparent shadow-none" : undefined}>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <form action={createMovementAction} className="grid min-w-0 gap-2">
+        <form action={action} className="grid min-w-0 gap-2">
+          {movement ? <input type="hidden" name="id" value={movement.id} /> : null}
           <input type="hidden" name="batchId" value={batchId} />
           <input type="hidden" name="type" value={type} />
-          <Input name="date" type="date" />
+          <Input name="date" type="date" defaultValue={String(movement?.date ?? "")} />
           {mode === "from-to" || mode === "from" ? (
-            <Select name="fromLocationId" required>
+            <Select name="fromLocationId" required defaultValue={movement?.fromLocationId ?? ""}>
               <option value="">从哪里</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>{location.name}</option>
@@ -329,7 +368,7 @@ function MovementForm({
             </Select>
           ) : null}
           {mode === "from-to" || mode === "to" ? (
-            <Select name="toLocationId" required>
+            <Select name="toLocationId" required defaultValue={movement?.toLocationId ?? ""}>
               <option value="">{toPlaceholder}</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>{location.name}</option>
@@ -337,14 +376,22 @@ function MovementForm({
             </Select>
           ) : null}
           {mode === "location" ? (
-            <Select name="locationId" required>
+            <Select name="locationId" required defaultValue={movement?.fromLocationId ?? ""}>
               <option value="">扣减地点</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>{location.name}</option>
               ))}
             </Select>
           ) : null}
-          <Input name="quantity" type="number" step="0.01" min="0" placeholder="数量" required />
+          <Input
+            name="quantity"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="数量"
+            defaultValue={movement?.quantity}
+            required
+          />
           {type === "STOCK_IN" ? (
             <Input
               name="movementTotalPrice"
@@ -352,13 +399,28 @@ function MovementForm({
               step="0.01"
               min="0"
               placeholder="请输入本次增加库存的总价"
+              defaultValue={movement?.totalPrice ?? ""}
               required
             />
           ) : null}
-          <Textarea name="remark" placeholder="备注" />
-          <SubmitButton size="sm">{title}</SubmitButton>
+          <Textarea name="remark" placeholder="备注" defaultValue={movement?.remark} />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SubmitButton size="sm">{submitLabel ?? title}</SubmitButton>
+            {cancelHref ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={cancelHref}>取消</Link>
+              </Button>
+            ) : null}
+          </div>
         </form>
       </CardContent>
     </Card>
   );
+}
+
+function movementMode(type: keyof typeof movementLabels) {
+  if (type === "TRANSFER") return "from-to";
+  if (type === "RETURN") return "from";
+  if (type === "CONSUME" || type === "SCRAP") return "location";
+  return "to";
 }
