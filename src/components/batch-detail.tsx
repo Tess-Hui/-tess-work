@@ -19,6 +19,7 @@ const movementLabels = {
   RETURN: "退回",
   SCRAP: "报废",
   CONSUME: "扣减",
+  STOCK_IN: "增加库存",
 } as const;
 
 const statusLabels = {
@@ -26,6 +27,42 @@ const statusLabels = {
   used_up: "已用完",
   inactive: "已停用",
 } as const;
+
+const LOW_STOCK_THRESHOLD = 50;
+
+function formatQuantity(value: number) {
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function stockBarWidth(quantity: number, maxQuantity: number) {
+  if (quantity <= 0 || maxQuantity <= 0) return "0%";
+  return `${Math.max(4, Math.min(100, (quantity / maxQuantity) * 100))}%`;
+}
+
+function isLowStock(quantity: number) {
+  return quantity > 0 && quantity <= LOW_STOCK_THRESHOLD;
+}
+
+function movementBadgeClass(type: keyof typeof movementLabels) {
+  switch (type) {
+    case "OUT":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "TRANSFER":
+      return "border-indigo-200 bg-indigo-50 text-indigo-700";
+    case "RETURN":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "STOCK_IN":
+      return "border-green-200 bg-green-50 text-green-700";
+    case "SCRAP":
+    case "CONSUME":
+      return "border-red-200 bg-red-50 text-red-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-600";
+  }
+}
 
 export async function BatchDetail({
   id,
@@ -41,6 +78,10 @@ export async function BatchDetail({
   const quantity = Number(detail.batch.quantity);
   const totalPrice = Number(detail.batch.totalPrice);
   const unitPrice = quantity > 0 && Number.isFinite(totalPrice) ? totalPrice / quantity : 0;
+  const maxDistributionQuantity = Math.max(
+    0,
+    ...detail.stockDistribution.map((item) => item.quantity),
+  );
 
   return (
     <div className="grid gap-5">
@@ -106,10 +147,26 @@ export async function BatchDetail({
           {detail.stockDistribution.length ? (
             detail.stockDistribution.map((item) => (
               <div key={item.location.id} className="rounded-md border border-slate-200 p-3">
-                <p className="font-medium text-slate-950">{item.location.name}</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-950">
-                  {item.quantity.toFixed(2)} {detail.material.unit}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950">{item.location.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">当前库存</p>
+                  </div>
+                  {isLowStock(item.quantity) ? (
+                    <span className="shrink-0 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                      库存告急
+                    </span>
+                  ) : null}
+                </div>
+                <p className={`mt-2 text-2xl font-semibold ${isLowStock(item.quantity) ? "text-red-700" : "text-slate-950"}`}>
+                  {formatQuantity(item.quantity)} {detail.material.unit}
                 </p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full rounded-full ${isLowStock(item.quantity) ? "bg-red-500" : "bg-emerald-500"}`}
+                    style={{ width: stockBarWidth(item.quantity, maxDistributionQuantity) }}
+                  />
+                </div>
               </div>
             ))
           ) : (
@@ -127,18 +184,31 @@ export async function BatchDetail({
             detail.movements.map((movement) => {
               const from = detail.locations.find((location) => location.id === movement.fromLocationId);
               const to = detail.locations.find((location) => location.id === movement.toLocationId);
+              const direction =
+                movement.type === "STOCK_IN"
+                  ? `新增库存 → ${to?.name ?? "未选择仓库"}`
+                  : movement.type === "CONSUME" || movement.type === "SCRAP"
+                    ? `${from?.name ?? "无"} → 已扣减`
+                    : `${from?.name ?? "无"} → ${to?.name ?? "无"}`;
+              const movementQuantity = Number(movement.quantity);
               return (
                 <div key={movement.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="border-slate-200 bg-slate-50 text-slate-600">
+                        <Badge className={movementBadgeClass(movement.type)}>
                           {movementLabels[movement.type]}
                         </Badge>
                         <span className="text-sm text-slate-500">{formatDate(movement.date)}</span>
                       </div>
-                      <p className="mt-2 text-sm text-slate-700">
-                        {from?.name ?? "无"} → {to?.name ?? "无"}，数量 {Number(movement.quantity).toFixed(2)} {detail.material.unit}
+                      <p className="mt-2 text-sm font-medium text-slate-800">
+                        {direction}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        数量：
+                        <span className="font-semibold text-slate-950">
+                          {formatQuantity(movementQuantity)} {detail.material.unit}
+                        </span>
                       </p>
                       {movement.remark ? <p className="mt-1 text-sm text-slate-500">{movement.remark}</p> : null}
                     </div>
@@ -163,11 +233,19 @@ export async function BatchDetail({
         </CardContent>
       </Card>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <MovementForm batchId={id} title="发货" type="OUT" locations={detail.locations} mode="to" />
         <MovementForm batchId={id} title="调货" type="TRANSFER" locations={detail.locations} mode="from-to" />
         <MovementForm batchId={id} title="退回" type="RETURN" locations={detail.locations} mode="from" />
         <MovementForm batchId={id} title="扣减" type="CONSUME" locations={detail.locations} mode="location" />
+        <MovementForm
+          batchId={id}
+          title="增加库存"
+          type="STOCK_IN"
+          locations={detail.locations}
+          mode="to"
+          toPlaceholder="增加到哪个仓库"
+        />
       </section>
     </div>
   );
@@ -179,12 +257,14 @@ function MovementForm({
   type,
   locations,
   mode,
+  toPlaceholder = "到哪里",
 }: {
   batchId: string;
   title: string;
   type: keyof typeof movementLabels;
   locations: NonNullable<Awaited<ReturnType<typeof getBatchDetail>>>["locations"];
   mode: "to" | "from-to" | "from" | "location";
+  toPlaceholder?: string;
 }) {
   return (
     <Card>
@@ -206,7 +286,7 @@ function MovementForm({
           ) : null}
           {mode === "from-to" || mode === "to" ? (
             <Select name="toLocationId" required>
-              <option value="">到哪里</option>
+              <option value="">{toPlaceholder}</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>{location.name}</option>
               ))}

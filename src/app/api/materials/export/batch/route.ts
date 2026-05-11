@@ -10,6 +10,7 @@ const movementLabels = {
   RETURN: "退回",
   SCRAP: "报废",
   CONSUME: "扣减",
+  STOCK_IN: "增加库存",
 } as const;
 
 export const dynamic = "force-dynamic";
@@ -55,10 +56,11 @@ export async function GET(request: NextRequest) {
         ...detail.movements.map((movement) => {
           const from = detail.locations.find((location) => location.id === movement.fromLocationId);
           const to = detail.locations.find((location) => location.id === movement.toLocationId);
+          const fromName = movement.type === "STOCK_IN" ? "新增库存" : from?.name ?? "";
           return [
             String(movement.date),
             movementLabels[movement.type],
-            from?.name ?? "",
+            fromName,
             to?.name ?? "",
             numberValue(movement.quantity),
             movement.remark,

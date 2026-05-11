@@ -67,6 +67,10 @@ async function runDatabaseInit() {
   `;
 
   await sql`
+    ALTER TYPE "public"."movement_type" ADD VALUE IF NOT EXISTS 'STOCK_IN';
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS "tasks" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "content" text NOT NULL,

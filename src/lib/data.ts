@@ -702,6 +702,8 @@ async function buildInventorySummary() {
           sourceText = `从${fromName}发货过来，数量 ${quantityText}`;
         } else if (latestInbound.type === "RETURN") {
           sourceText = `从${fromName}退回，数量 ${quantityText}`;
+        } else if (latestInbound.type === "STOCK_IN") {
+          sourceText = `新增库存到${location.name}，数量 ${quantityText}`;
         } else {
           sourceText = `最近入库到${location.name}，数量 ${quantityText}`;
         }

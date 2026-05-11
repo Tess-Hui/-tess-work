@@ -10,6 +10,7 @@ const movementLabels = {
   RETURN: "退回",
   SCRAP: "报废",
   CONSUME: "扣减",
+  STOCK_IN: "增加库存",
 } as const;
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
           row.batch.batchCode,
           row.material.name,
           movementLabels[row.movement.type],
-          row.fromLocation?.name ?? "",
+          row.movement.type === "STOCK_IN" ? "新增库存" : row.fromLocation?.name ?? "",
           row.toLocation?.name ?? "",
           numberValue(row.movement.quantity),
           row.movement.remark,

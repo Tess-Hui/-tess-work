@@ -33,6 +33,7 @@ export const movementTypeEnum = pgEnum("movement_type", [
   "RETURN",
   "SCRAP",
   "CONSUME",
+  "STOCK_IN",
 ]);
 
 export const tasks = pgTable(
@@ -252,4 +253,4 @@ export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "todo" | "completed" | "trashed";
 export type BatchStatus = "active" | "used_up" | "inactive";
 export type LocationType = "warehouse" | "factory" | "other";
-export type MovementType = "OUT" | "TRANSFER" | "RETURN" | "SCRAP" | "CONSUME";
+export type MovementType = "OUT" | "TRANSFER" | "RETURN" | "SCRAP" | "CONSUME" | "STOCK_IN";

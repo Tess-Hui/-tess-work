@@ -377,7 +377,7 @@ export async function createMovementAction(formData: FormData) {
   const fromLocationId = text(formData, "fromLocationId");
   const toLocationId = text(formData, "toLocationId");
 
-  const movementType = (["OUT", "TRANSFER", "RETURN", "SCRAP", "CONSUME"].includes(type)
+  const movementType = (["OUT", "TRANSFER", "RETURN", "SCRAP", "CONSUME", "STOCK_IN"].includes(type)
     ? type
     : "OUT") as MovementType;
 
@@ -390,6 +390,7 @@ export async function createMovementAction(formData: FormData) {
   }
   if (movementType === "RETURN") from = fromLocationId;
   if (movementType === "SCRAP" || movementType === "CONSUME") from = location;
+  if (movementType === "STOCK_IN") to = toLocationId;
 
   try {
     await createMovement({
