@@ -18,7 +18,7 @@ export function formatInventoryNumber(value: number) {
 function getStockState(stock: number) {
   if (stock <= 0) {
     return {
-      label: "已无库存",
+      label: "已清零 / 需补货",
       barClassName: "bg-rose-500",
       textClassName: "text-rose-600",
     };

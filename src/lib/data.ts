@@ -169,6 +169,15 @@ function movementSortDesc(a: Movement, b: Movement) {
   return String(b.date).localeCompare(String(a.date)) || b.createdAt.getTime() - a.createdAt.getTime();
 }
 
+function sortInventoryItems<T extends { stock: number; materialName: string }>(items: T[]) {
+  return items.sort((a, b) => {
+    const aZero = Math.abs(a.stock) <= 0.0001;
+    const bZero = Math.abs(b.stock) <= 0.0001;
+    if (aZero !== bZero) return aZero ? 1 : -1;
+    return b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN");
+  });
+}
+
 export function calculateBatchStock(
   batch: Batch,
   movementItems: Movement[],
@@ -626,9 +635,14 @@ async function buildInventorySummary() {
       ? { ...row.batch, initialLocationId: resolvedInitialLocation.id }
       : row.batch;
     const detailStock = calculateBatchStock(effectiveBatch, batchMovements);
+    const relatedLocationIds = new Set<string>([effectiveBatch.initialLocationId]);
+    for (const movement of batchMovements) {
+      if (movement.fromLocationId) relatedLocationIds.add(movement.fromLocationId);
+      if (movement.toLocationId) relatedLocationIds.add(movement.toLocationId);
+    }
     const stockDistribution = locationItems
-      .map((location) => ({ location, quantity: detailStock.get(location.id) ?? 0 }))
-      .filter((item) => Math.abs(item.quantity) > 0.0001);
+      .filter((location) => relatedLocationIds.has(location.id))
+      .map((location) => ({ location, quantity: detailStock.get(location.id) ?? 0 }));
     const currentRemaining = stockDistribution.reduce((sum, item) => sum + item.quantity, 0);
 
     byBatch.push({
@@ -689,6 +703,9 @@ async function buildInventorySummary() {
       }
 
       const latestInbound = batchMovements.find((movement) => movement.toLocationId === location.id);
+      const latestRelated = batchMovements.find(
+        (movement) => movement.toLocationId === location.id || movement.fromLocationId === location.id,
+      );
       const fromName = latestInbound?.fromLocationId
         ? locationById.get(latestInbound.fromLocationId)?.name ?? "其他地点"
         : "";
@@ -707,6 +724,8 @@ async function buildInventorySummary() {
         } else {
           sourceText = `最近入库到${location.name}，数量 ${quantityText}`;
         }
+      } else if (latestRelated) {
+        sourceText = `最近流转后当前库存为 ${quantity}`;
       }
 
       summary.detailRows.push({
@@ -726,12 +745,13 @@ async function buildInventorySummary() {
       locationName: summary.locationName,
       locationType: summary.locationType,
       totalStock: summary.totalStock,
-      items: [...summary.itemMap.values()]
-        .filter((item) => Math.abs(item.stock) > 0.0001)
-        .sort((a, b) => b.stock - a.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
-      detailRows: summary.detailRows
-        .filter((row) => Math.abs(row.quantity) > 0.0001)
-        .sort((a, b) => b.quantity - a.quantity || a.materialName.localeCompare(b.materialName, "zh-Hans-CN")),
+      items: sortInventoryItems([...summary.itemMap.values()]),
+      detailRows: [...summary.detailRows].sort((a, b) => {
+        const aZero = Math.abs(a.quantity) <= 0.0001;
+        const bZero = Math.abs(b.quantity) <= 0.0001;
+        if (aZero !== bZero) return aZero ? 1 : -1;
+        return b.quantity - a.quantity || a.materialName.localeCompare(b.materialName, "zh-Hans-CN");
+      }),
     }))
     .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
 
@@ -1131,11 +1151,29 @@ export async function createMovement(input: {
 export async function getMaterialHomeData() {
   const summary = await getInventorySummary();
   const locationStocks = summary.byLocation
-    .filter((location) => location.locationType === "warehouse" && Math.abs(location.totalStock) > 0.0001);
+    .filter((location) => location.locationType === "warehouse");
+  const lowStockAlerts = locationStocks
+    .flatMap((location) =>
+      location.items
+        .filter((item) => item.stock <= 50)
+        .map((item) => ({
+          locationId: location.locationId,
+          locationName: location.locationName,
+          materialId: item.materialId,
+          materialName: item.materialName,
+          stock: item.stock,
+        })),
+    )
+    .sort((a, b) => {
+      const aZero = Math.abs(a.stock) <= 0.0001;
+      const bZero = Math.abs(b.stock) <= 0.0001;
+      if (aZero !== bZero) return aZero ? -1 : 1;
+      return a.stock - b.stock || a.materialName.localeCompare(b.materialName, "zh-Hans-CN");
+    });
 
   return {
-    recentBatches: summary.byBatch.slice(0, 5),
     locationStocks,
+    lowStockAlerts,
     batchCount: summary.byBatch.length,
     totalStock: summary.byLocation.reduce((sum, location) => sum + location.totalStock, 0),
   };

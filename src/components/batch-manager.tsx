@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { InventoryItemBars } from "@/components/inventory-item-bars";
 import { deleteBatchAction, saveBatchAction } from "@/lib/actions";
 import { getBatchDetail, listBatches, listMaterials, listWarehouseLocations } from "@/lib/data";
 
@@ -91,6 +92,18 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                     <span>当前剩余：{row.currentRemaining.toFixed(2)} {row.material.unit}</span>
                     <span>物料尺寸：{row.material.size || "未填写"}</span>
                     <span>仓库：{row.batch.supplier || "未填写"}</span>
+                  </div>
+                  <div className="mt-4 rounded-md border border-slate-100 bg-slate-50 p-3">
+                    <p className="mb-3 text-sm font-medium text-slate-700">仓库库存分布明细</p>
+                    <InventoryItemBars
+                      items={row.stockDistribution.map((stock) => ({
+                        materialId: stock.location.id,
+                        materialName: stock.location.name,
+                        stock: stock.quantity,
+                      }))}
+                      limit={5}
+                      detailHref={`/materials/batches/${row.batch.id}`}
+                    />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">

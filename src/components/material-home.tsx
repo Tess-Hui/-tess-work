@@ -4,9 +4,9 @@ import { Download, Plus, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { InventoryItemBars, formatInventoryNumber } from "@/components/inventory-item-bars";
 import { LocationStockVisualization } from "@/components/location-stock-visualization";
 import { getMaterialHomeData } from "@/lib/data";
-import { formatDate } from "@/lib/dates";
 
 export async function MaterialHome() {
   const data = await getMaterialHomeData();
@@ -44,7 +44,7 @@ export async function MaterialHome() {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-slate-500">当前库存汇总</p>
-            <p className="mt-3 text-3xl font-semibold text-slate-950">{data.totalStock.toFixed(2)}</p>
+            <p className="mt-3 text-3xl font-semibold text-slate-950">{formatInventoryNumber(data.totalStock)}</p>
           </CardContent>
         </Card>
       </section>
@@ -65,29 +65,47 @@ export async function MaterialHome() {
 
       <Card>
         <CardHeader>
-          <CardTitle>最近批次</CardTitle>
+          <CardTitle>库存告急提醒</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
-          {data.recentBatches.length ? (
-            data.recentBatches.map((row) => (
+          {data.lowStockAlerts.length ? (
+            <>
+            {data.lowStockAlerts.slice(0, 10).map((alert) => (
               <Link
-                key={row.batch.id}
-                href={`/materials/batches/${row.batch.id}`}
+                key={`${alert.locationId}-${alert.materialId}-${alert.materialName}`}
+                href={`/locations/${alert.locationId}/inventory`}
                 className="rounded-md border border-slate-200 p-3 hover:bg-slate-50"
               >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="border-slate-200 bg-slate-50 text-slate-600">{row.batch.batchCode}</Badge>
-                  <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                    剩余 {row.currentRemaining.toFixed(2)} {row.material.unit}
-                  </Badge>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="border-red-200 bg-red-50 text-red-700">
+                        {alert.stock <= 0 ? "已清零 / 需补货" : "库存告急"}
+                      </Badge>
+                      <Badge className="border-slate-200 bg-slate-50 text-slate-600">
+                        仓库：{alert.locationName}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 font-medium text-slate-950">{alert.materialName}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-red-600">
+                    当前库存：{formatInventoryNumber(alert.stock)}
+                  </p>
                 </div>
-                <p className="mt-2 font-medium text-slate-950">{row.material.name}</p>
-                <p className="mt-1 text-sm text-slate-500">制作日期：{formatDate(row.batch.productionDate)}</p>
+                <div className="mt-3">
+                  <InventoryItemBars items={[{ materialName: alert.materialName, stock: alert.stock }]} />
+                </div>
               </Link>
-            ))
+            ))}
+            {data.lowStockAlerts.length > 10 ? (
+              <Link href="/locations" className="text-sm font-medium text-emerald-700 hover:text-emerald-800">
+                还有 {data.lowStockAlerts.length - 10} 条库存告急，点击查看全部
+              </Link>
+            ) : null}
+            </>
           ) : (
             <p className="rounded-md border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-              暂无批次，先新建一个物料和批次。
+              暂无库存告急物料。
             </p>
           )}
         </CardContent>
