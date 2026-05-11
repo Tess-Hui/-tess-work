@@ -9,6 +9,7 @@ import {
   createMovement,
   completeTask,
   createTask,
+  deleteBatch,
   deleteFixedItem,
   deleteLocation,
   deleteMaterialSize,
@@ -349,6 +350,13 @@ export async function saveBatchAction(formData: FormData) {
   }
   revalidateApp();
   redirect("/materials/batches");
+}
+
+export async function deleteBatchAction(formData: FormData) {
+  await requireAuth();
+  await deleteBatch(text(formData, "id"));
+  revalidateApp();
+  redirect("/materials/batches?deleted=1");
 }
 
 export async function createMovementAction(formData: FormData) {

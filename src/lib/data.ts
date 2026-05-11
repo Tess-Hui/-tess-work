@@ -1054,6 +1054,12 @@ export async function updateBatch(
   return batch;
 }
 
+export async function deleteBatch(id: string) {
+  const db = await getDb();
+  await db.delete(movements).where(eq(movements.batchId, id));
+  await db.delete(batches).where(eq(batches.id, id));
+}
+
 export async function createMovement(input: {
   batchId: string;
   date: string;

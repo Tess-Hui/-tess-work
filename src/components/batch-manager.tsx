@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Package, Search } from "lucide-react";
 
+import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
 import { EmptyState } from "@/components/empty-state";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { saveBatchAction } from "@/lib/actions";
+import { deleteBatchAction, saveBatchAction } from "@/lib/actions";
 import { getBatchDetail, listBatches, listMaterials, listWarehouseLocations } from "@/lib/data";
 
 type Params = {
@@ -21,6 +22,7 @@ type Params = {
   supplier?: string;
   edit?: string;
   new?: string;
+  deleted?: string;
 };
 
 const statusLabels = {
@@ -57,6 +59,12 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
 
       <BatchFilters searchParams={searchParams} materials={materialItems} />
 
+      {searchParams.deleted === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">已删除批次。</CardContent>
+        </Card>
+      ) : null}
+
       {editing || searchParams.new === "1" ? (
         <BatchForm
           detail={editing}
@@ -92,6 +100,10 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                   <Button asChild variant="ghost" size="sm">
                     <Link href={`/materials/batches?edit=${row.batch.id}#batch-form`}>编辑</Link>
                   </Button>
+                  <form action={deleteBatchAction}>
+                    <input type="hidden" name="id" value={row.batch.id} />
+                    <ConfirmDeleteButton />
+                  </form>
                 </div>
               </CardContent>
             </Card>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createMovementAction } from "@/lib/actions";
+import { createMovementAction, deleteBatchAction } from "@/lib/actions";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { getBatchDetail } from "@/lib/data";
 
@@ -43,9 +44,15 @@ export async function BatchDetail({ id, error }: { id: string; error?: string })
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{detail.material.name}</h1>
           <p className="mt-1 text-sm text-slate-500">批次详情、库存分布和流转时间线。</p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/materials/batches">返回批次列表</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/materials/batches">返回批次列表</Link>
+          </Button>
+          <form action={deleteBatchAction}>
+            <input type="hidden" name="id" value={detail.batch.id} />
+            <ConfirmDeleteButton triggerText="删除批次" />
+          </form>
+        </div>
       </div>
 
       {error ? (
