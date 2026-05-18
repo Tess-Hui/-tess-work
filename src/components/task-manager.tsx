@@ -147,6 +147,8 @@ function TaskFilters({ searchParams }: { searchParams: SearchParams }) {
 }
 
 function TaskForm({ task }: { task: Task | null }) {
+  const showCompletedAt = Boolean(task?.completedAt || task?.status === "completed");
+
   return (
     <Card id="task-form">
       <CardHeader>
@@ -162,13 +164,15 @@ function TaskForm({ task }: { task: Task | null }) {
             <Field label="计划完成时间 Planned due">
               <Input name="plannedAt" type="datetime-local" defaultValue={toDateTimeInput(task?.plannedAt)} />
             </Field>
-            <Field label="实际完成时间 Completed at">
-              <Input
-                name="completedAt"
-                type="datetime-local"
-                defaultValue={toDateTimeInput(task?.completedAt)}
-              />
-            </Field>
+            {showCompletedAt ? (
+              <Field label="实际完成时间 Completed at">
+                <Input
+                  name="completedAt"
+                  type="datetime-local"
+                  defaultValue={toDateTimeInput(task?.completedAt)}
+                />
+              </Field>
+            ) : null}
             <Field label="对接人">
               <Input name="liaison" defaultValue={task?.liaison} placeholder="例如：客户 / 同事 / 供应商" />
             </Field>
