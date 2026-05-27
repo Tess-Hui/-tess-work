@@ -280,6 +280,37 @@ export async function listTasks(filters: TaskFilters = {}) {
     .orderBy(...taskOrderBy(filters.sort));
 }
 
+export async function getTodoTaskStats() {
+  const db = await getDb();
+  const [
+    total,
+    high,
+    medium,
+    low,
+  ] = await Promise.all([
+    db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
+    db
+      .select({ value: count() })
+      .from(tasks)
+      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "high"))),
+    db
+      .select({ value: count() })
+      .from(tasks)
+      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "medium"))),
+    db
+      .select({ value: count() })
+      .from(tasks)
+      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "low"))),
+  ]);
+
+  return {
+    total: total[0]?.value ?? 0,
+    high: high[0]?.value ?? 0,
+    medium: medium[0]?.value ?? 0,
+    low: low[0]?.value ?? 0,
+  };
+}
+
 export async function getTaskById(id?: string | null) {
   if (!id) return null;
   const db = await getDb();

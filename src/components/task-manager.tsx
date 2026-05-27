@@ -19,7 +19,7 @@ import {
   trashTaskAction,
 } from "@/lib/actions";
 import { formatDateTime, toDateTimeInput } from "@/lib/dates";
-import { listTasks, getTaskById } from "@/lib/data";
+import { getTaskById, getTodoTaskStats, listTasks } from "@/lib/data";
 import { EmptyState } from "@/components/empty-state";
 import { PriorityBadge } from "@/components/priority-badge";
 import { SubmitButton } from "@/components/submit-button";
@@ -64,7 +64,7 @@ export async function TaskManager({
   status: TaskStatus;
   searchParams: SearchParams;
 }) {
-  const [items, editing] = await Promise.all([
+  const [items, editing, todoStats] = await Promise.all([
     listTasks({
       status,
       search: searchParams.search,
@@ -74,6 +74,7 @@ export async function TaskManager({
       sort: searchParams.sort,
     }),
     status === "todo" ? getTaskById(searchParams.edit) : null,
+    status === "todo" ? getTodoTaskStats() : null,
   ]);
   const meta = pageMeta[status];
   const showForm = status === "todo";
@@ -81,6 +82,7 @@ export async function TaskManager({
   return (
     <div className="grid gap-5">
       <PageTitle title={meta.title} description={meta.description} />
+      {todoStats ? <TodoStatsCards stats={todoStats} /> : null}
       <TaskFilters searchParams={searchParams} />
       {showForm ? (
         <TaskFormToggle
@@ -92,6 +94,33 @@ export async function TaskManager({
       ) : null}
       <TaskList items={items} status={status} />
     </div>
+  );
+}
+
+function TodoStatsCards({
+  stats,
+}: {
+  stats: Awaited<ReturnType<typeof getTodoTaskStats>>;
+}) {
+  const cards = [
+    { label: "待办总数", value: stats.total, className: "text-slate-950" },
+    { label: "高优先级", value: stats.high, className: "text-red-600" },
+    { label: "中优先级", value: stats.medium, className: "text-amber-600" },
+    { label: "低优先级", value: stats.low, className: "text-sky-600" },
+  ];
+
+  return (
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="待办统计">
+      {cards.map((card) => (
+        <Card key={card.label}>
+          <CardContent className="p-4">
+            <p className="text-sm text-slate-500">{card.label}</p>
+            <p className={`mt-3 text-3xl font-semibold ${card.className}`}>{card.value}</p>
+            <p className="mt-1 text-xs text-slate-400">当前全部未完成任务统计</p>
+          </CardContent>
+        </Card>
+      ))}
+    </section>
   );
 }
 
