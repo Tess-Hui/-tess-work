@@ -32,6 +32,12 @@ const statusLabels = {
   inactive: "已停用",
 } as const;
 
+const statusBadgeClasses = {
+  active: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  used_up: "border-slate-200 bg-slate-50 text-slate-600",
+  inactive: "border-slate-200 bg-slate-50 text-slate-600",
+} as const;
+
 export async function BatchManager({ searchParams }: { searchParams: Params }) {
   const [items, materialItems, warehouseItems, editing] = await Promise.all([
     listBatches({
@@ -82,9 +88,14 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className="border-slate-200 bg-slate-50 text-slate-600">{row.batch.batchCode}</Badge>
-                    <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                    <Badge className={statusBadgeClasses[row.batch.status]}>
                       {statusLabels[row.batch.status]}
                     </Badge>
+                    {row.batch.status !== "active" ? (
+                      <Badge className="border-slate-200 bg-slate-50 text-slate-600">
+                        不再补货
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="mt-2 text-base font-semibold text-slate-950">{row.material.name}</p>
                   <div className="mt-2 grid gap-1 text-sm text-slate-500 sm:grid-cols-2">
@@ -100,6 +111,8 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                         materialId: stock.location.id,
                         materialName: stock.location.name,
                         stock: stock.quantity,
+                        status: row.batch.status,
+                        activeStock: row.batch.status === "active" ? stock.quantity : 0,
                       }))}
                       limit={5}
                       detailHref={`/materials/batches/${row.batch.id}`}

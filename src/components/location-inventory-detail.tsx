@@ -13,6 +13,18 @@ function formatInventoryNumber(value: number) {
   }).format(value);
 }
 
+const statusLabels = {
+  active: "进行中",
+  used_up: "已用完 / 不再补货",
+  inactive: "已停用 / 不再补货",
+} as const;
+
+const statusClasses = {
+  active: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  used_up: "border-slate-200 bg-slate-50 text-slate-600",
+  inactive: "border-slate-200 bg-slate-50 text-slate-600",
+} as const;
+
 export async function LocationInventoryDetail({ id }: { id: string }) {
   const detail = await getLocationInventoryDetail(id);
   if (!detail) notFound();
@@ -70,6 +82,11 @@ export async function LocationInventoryDetail({ id }: { id: string }) {
                       <p>当前数量：{formatInventoryNumber(row.quantity)}</p>
                       <p>批次：{row.batchCode}</p>
                       <p>来源：{row.sourceText}</p>
+                      <p>
+                        <Badge className={statusClasses[row.status]}>
+                          {statusLabels[row.status]}
+                        </Badge>
+                      </p>
                     </div>
                   </div>
                   <Button asChild variant="ghost" size="sm">

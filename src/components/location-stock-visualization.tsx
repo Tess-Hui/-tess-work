@@ -10,6 +10,8 @@ type LocationStockItem = {
     materialId: string;
     materialName: string;
     stock: number;
+    status?: "active" | "used_up" | "inactive";
+    activeStock?: number;
   }>;
 };
 

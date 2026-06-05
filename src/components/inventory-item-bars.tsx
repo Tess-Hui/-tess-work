@@ -4,6 +4,8 @@ type InventoryItem = {
   materialId?: string;
   materialName: string;
   stock: number;
+  status?: "active" | "used_up" | "inactive";
+  activeStock?: number;
 };
 
 const LOW_STOCK_THRESHOLD = 50;
@@ -15,12 +17,34 @@ export function formatInventoryNumber(value: number) {
   }).format(value);
 }
 
-function getStockState(stock: number) {
+function getStockState(item: InventoryItem) {
+  const status = item.status ?? "active";
+  const stock = status === "active" ? item.activeStock ?? item.stock : item.stock;
+
+  if (status === "inactive") {
+    return {
+      label: "已停用 / 不再补货",
+      barClassName: "bg-slate-300",
+      textClassName: "text-slate-500",
+      displayStock: item.stock,
+    };
+  }
+
+  if (status === "used_up") {
+    return {
+      label: "已用完 / 不再补货",
+      barClassName: "bg-slate-300",
+      textClassName: "text-slate-500",
+      displayStock: item.stock,
+    };
+  }
+
   if (stock <= 0) {
     return {
       label: "已清零 / 需补货",
       barClassName: "bg-rose-500",
       textClassName: "text-rose-600",
+      displayStock: item.stock,
     };
   }
 
@@ -29,6 +53,7 @@ function getStockState(stock: number) {
       label: "库存告急",
       barClassName: "bg-red-500",
       textClassName: "text-red-600",
+      displayStock: item.stock,
     };
   }
 
@@ -36,6 +61,7 @@ function getStockState(stock: number) {
     label: "",
     barClassName: "bg-emerald-500",
     textClassName: "text-slate-950",
+    displayStock: item.stock,
   };
 }
 
@@ -59,7 +85,7 @@ export function InventoryItemBars({
   return (
     <div className="grid gap-3">
       {visibleItems.map((item) => {
-        const state = getStockState(item.stock);
+        const state = getStockState(item);
         const width = maxStock > 0 && item.stock > 0
           ? Math.max(4, Math.round((item.stock / maxStock) * 100))
           : 3;
@@ -72,9 +98,9 @@ export function InventoryItemBars({
               </p>
               <div className="shrink-0 text-right">
                 <p className={`text-sm font-semibold ${state.textClassName}`}>
-                  {formatInventoryNumber(item.stock)}
+                  {formatInventoryNumber(state.displayStock)}
                 </p>
-                {state.label ? <p className="text-xs font-medium text-red-600">{state.label}</p> : null}
+                {state.label ? <p className={`text-xs font-medium ${state.textClassName}`}>{state.label}</p> : null}
               </div>
             </div>
             <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">

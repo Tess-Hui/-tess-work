@@ -99,10 +99,14 @@ type InventoryBatchSummary = {
   movements: Movement[];
 };
 
+type InventoryReplenishState = BatchStatus;
+
 type InventoryLocationItemSummary = {
   materialId: string;
   materialName: string;
   stock: number;
+  status: InventoryReplenishState;
+  activeStock: number;
 };
 
 type InventoryLocationDetailRow = {
@@ -111,6 +115,7 @@ type InventoryLocationDetailRow = {
   materialId: string;
   materialName: string;
   quantity: number;
+  status: InventoryReplenishState;
   sourceText: string;
 };
 
@@ -178,6 +183,12 @@ function sortInventoryItems<T extends { stock: number; materialName: string }>(i
   });
 }
 
+function mergeInventoryStatus(current: InventoryReplenishState | undefined, next: InventoryReplenishState) {
+  if (current === "active" || next === "active") return "active";
+  if (current === "used_up" || next === "used_up") return "used_up";
+  return next;
+}
+
 export function calculateBatchStock(
   batch: Batch,
   movementItems: Movement[],
@@ -230,21 +241,7 @@ async function getDefaultLocationId(db: Awaited<ReturnType<typeof getDb>>) {
 async function refreshBatchStatus(batchId: string) {
   const db = await getDb();
   const [batch] = await db.select().from(batches).where(eq(batches.id, batchId)).limit(1);
-  if (!batch || batch.status === "inactive") return;
-
-  const movementItems = await db
-    .select()
-    .from(movements)
-    .where(eq(movements.batchId, batchId));
-  const remaining = [...calculateBatchStock(batch, movementItems).values()].reduce(
-    (sum, quantity) => sum + quantity,
-    0,
-  );
-
-  await db
-    .update(batches)
-    .set({ status: remaining <= 0 ? "used_up" : "active" })
-    .where(eq(batches.id, batchId));
+  if (!batch) return;
 }
 
 export async function listTasks(filters: TaskFilters = {}) {
@@ -280,7 +277,7 @@ export async function listTasks(filters: TaskFilters = {}) {
     .orderBy(...taskOrderBy(filters.sort));
 }
 
-export async function getTodoTaskStats() {
+export async function getTaskStats(status: TaskStatus) {
   const db = await getDb();
   const [
     total,
@@ -288,19 +285,19 @@ export async function getTodoTaskStats() {
     medium,
     low,
   ] = await Promise.all([
-    db.select({ value: count() }).from(tasks).where(eq(tasks.status, "todo")),
+    db.select({ value: count() }).from(tasks).where(eq(tasks.status, status)),
     db
       .select({ value: count() })
       .from(tasks)
-      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "high"))),
+      .where(and(eq(tasks.status, status), eq(tasks.priority, "high"))),
     db
       .select({ value: count() })
       .from(tasks)
-      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "medium"))),
+      .where(and(eq(tasks.status, status), eq(tasks.priority, "medium"))),
     db
       .select({ value: count() })
       .from(tasks)
-      .where(and(eq(tasks.status, "todo"), eq(tasks.priority, "low"))),
+      .where(and(eq(tasks.status, status), eq(tasks.priority, "low"))),
   ]);
 
   return {
@@ -309,6 +306,10 @@ export async function getTodoTaskStats() {
     medium: medium[0]?.value ?? 0,
     low: low[0]?.value ?? 0,
   };
+}
+
+export async function getTodoTaskStats() {
+  return getTaskStats("todo");
 }
 
 export async function getTaskById(id?: string | null) {
@@ -742,11 +743,17 @@ async function buildInventorySummary() {
       const existingItem = summary.itemMap.get(materialName);
       if (existingItem) {
         existingItem.stock += quantity;
+        existingItem.status = mergeInventoryStatus(existingItem.status, effectiveBatch.status);
+        if (effectiveBatch.status === "active") {
+          existingItem.activeStock += quantity;
+        }
       } else {
         summary.itemMap.set(materialName, {
           materialId: row.material.id,
           materialName,
           stock: quantity,
+          status: effectiveBatch.status,
+          activeStock: effectiveBatch.status === "active" ? quantity : 0,
         });
       }
 
@@ -782,6 +789,7 @@ async function buildInventorySummary() {
         materialId: row.material.id,
         materialName,
         quantity,
+        status: effectiveBatch.status,
         sourceText,
       });
     }
@@ -1245,13 +1253,14 @@ export async function getMaterialHomeData() {
   const lowStockAlerts = locationStocks
     .flatMap((location) =>
       location.items
-        .filter((item) => item.stock <= 50)
+        .filter((item) => item.status === "active" && item.activeStock <= 50)
         .map((item) => ({
           locationId: location.locationId,
           locationName: location.locationName,
           materialId: item.materialId,
           materialName: item.materialName,
-          stock: item.stock,
+          stock: item.activeStock,
+          status: item.status,
         })),
     )
     .sort((a, b) => {
