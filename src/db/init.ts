@@ -52,6 +52,15 @@ async function runDatabaseInit() {
   await sql`
     DO $$
     BEGIN
+      CREATE TYPE "public"."material_location_status" AS ENUM ('active', 'used_up', 'inactive');
+    EXCEPTION
+      WHEN duplicate_object OR unique_violation THEN NULL;
+    END $$;
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
       CREATE TYPE "public"."location_type" AS ENUM ('warehouse', 'factory', 'other');
     EXCEPTION
       WHEN duplicate_object OR unique_violation THEN NULL;
@@ -133,6 +142,7 @@ async function runDatabaseInit() {
     CREATE TABLE IF NOT EXISTS "materials" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "name" text NOT NULL,
+      "category" text DEFAULT '未分类' NOT NULL,
       "type" text DEFAULT '' NOT NULL,
       "size" text DEFAULT '' NOT NULL,
       "unit" text DEFAULT '' NOT NULL,
@@ -196,6 +206,42 @@ async function runDatabaseInit() {
     ALTER TABLE "movements" ADD COLUMN IF NOT EXISTS "total_price" numeric(12, 2);
   `;
 
+  await sql`
+    ALTER TABLE IF EXISTS "materials"
+    ADD COLUMN IF NOT EXISTS "category" text DEFAULT '未分类' NOT NULL;
+  `;
+
+  await sql`
+    UPDATE "materials"
+    SET "category" = CASE
+      WHEN "name" ILIKE '%彩盒%' THEN '彩盒'
+      WHEN "name" ILIKE '%贺卡%' THEN '贺卡'
+      WHEN "name" ILIKE '%标签%' THEN '标签类'
+      ELSE COALESCE(NULLIF("category", ''), '未分类')
+    END
+    WHERE "category" = '未分类' OR "category" = '';
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "material_location_states" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "material_id" uuid NOT NULL REFERENCES "materials"("id"),
+      "location_id" uuid NOT NULL REFERENCES "locations"("id"),
+      "status" "material_location_status" DEFAULT 'active' NOT NULL,
+      "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "bom_items" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "parent_material_id" uuid NOT NULL REFERENCES "materials"("id"),
+      "child_material_id" uuid NOT NULL REFERENCES "materials"("id"),
+      "quantity" numeric(12, 2) NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
+
   await sql`CREATE INDEX IF NOT EXISTS "tasks_status_idx" ON "tasks" USING btree ("status");`;
   await sql`CREATE INDEX IF NOT EXISTS "tasks_priority_idx" ON "tasks" USING btree ("priority");`;
   await sql`CREATE INDEX IF NOT EXISTS "tasks_planned_at_idx" ON "tasks" USING btree ("planned_at");`;
@@ -206,6 +252,7 @@ async function runDatabaseInit() {
   await sql`CREATE INDEX IF NOT EXISTS "memos_pinned_idx" ON "memos" USING btree ("pinned");`;
   await sql`CREATE INDEX IF NOT EXISTS "memos_tags_idx" ON "memos" USING btree ("tags");`;
   await sql`CREATE INDEX IF NOT EXISTS "materials_name_idx" ON "materials" USING btree ("name");`;
+  await sql`CREATE INDEX IF NOT EXISTS "materials_category_idx" ON "materials" USING btree ("category");`;
   await sql`CREATE INDEX IF NOT EXISTS "materials_type_idx" ON "materials" USING btree ("type");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_sizes_name_idx" ON "material_sizes" USING btree ("name");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "locations_name_idx" ON "locations" USING btree ("name");`;
@@ -220,6 +267,13 @@ async function runDatabaseInit() {
   await sql`CREATE INDEX IF NOT EXISTS "movements_type_idx" ON "movements" USING btree ("type");`;
   await sql`CREATE INDEX IF NOT EXISTS "movements_from_location_idx" ON "movements" USING btree ("from_location_id");`;
   await sql`CREATE INDEX IF NOT EXISTS "movements_to_location_idx" ON "movements" USING btree ("to_location_id");`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_location_states_unique_idx" ON "material_location_states" USING btree ("material_id", "location_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "material_location_states_material_idx" ON "material_location_states" USING btree ("material_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "material_location_states_location_idx" ON "material_location_states" USING btree ("location_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "material_location_states_status_idx" ON "material_location_states" USING btree ("status");`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "bom_items_parent_child_idx" ON "bom_items" USING btree ("parent_material_id", "child_material_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "bom_items_parent_idx" ON "bom_items" USING btree ("parent_material_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "bom_items_child_idx" ON "bom_items" USING btree ("child_material_id");`;
   await sql`
     INSERT INTO "locations" ("name", "type")
     VALUES ('自己仓', 'warehouse')
@@ -230,6 +284,8 @@ async function runDatabaseInit() {
 
 async function runDatabaseCompatibilityPatch() {
   const sql = neon(getDatabaseUrl());
+  await sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`;
+
   const [movementTypeState] = await sql`
     SELECT EXISTS (
       SELECT 1 FROM pg_type WHERE typname = 'movement_type'
@@ -239,6 +295,15 @@ async function runDatabaseCompatibilityPatch() {
   if (movementTypeState?.exists) {
     await sql`ALTER TYPE "public"."movement_type" ADD VALUE IF NOT EXISTS 'STOCK_IN';`;
   }
+
+  await sql`
+    DO $$
+    BEGIN
+      CREATE TYPE "public"."material_location_status" AS ENUM ('active', 'used_up', 'inactive');
+    EXCEPTION
+      WHEN duplicate_object OR unique_violation THEN NULL;
+    END $$;
+  `;
 
   await sql`
     ALTER TABLE IF EXISTS "movements"
@@ -260,6 +325,67 @@ async function runDatabaseCompatibilityPatch() {
       SET "total_price" = COALESCE("total_price", "price" * "quantity")
       WHERE "total_price" IS NULL;
     `;
+  }
+
+  await sql`
+    ALTER TABLE IF EXISTS "materials"
+    ADD COLUMN IF NOT EXISTS "category" text DEFAULT '未分类' NOT NULL;
+  `;
+
+  const [materialsTableState] = await sql`
+    SELECT to_regclass('public.materials') AS "tableName";
+  `;
+
+  if (materialsTableState?.tableName) {
+    await sql`
+      UPDATE "materials"
+      SET "category" = CASE
+        WHEN "name" ILIKE '%彩盒%' THEN '彩盒'
+        WHEN "name" ILIKE '%贺卡%' THEN '贺卡'
+        WHEN "name" ILIKE '%标签%' THEN '标签类'
+        ELSE COALESCE(NULLIF("category", ''), '未分类')
+      END
+      WHERE "category" = '未分类' OR "category" = '';
+    `;
+
+    await sql`CREATE INDEX IF NOT EXISTS "materials_category_idx" ON "materials" USING btree ("category");`;
+  }
+
+  const [locationsTableState] = await sql`
+    SELECT to_regclass('public.locations') AS "tableName";
+  `;
+
+  if (materialsTableState?.tableName && locationsTableState?.tableName) {
+    await sql`
+      CREATE TABLE IF NOT EXISTS "material_location_states" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "material_id" uuid NOT NULL REFERENCES "materials"("id"),
+        "location_id" uuid NOT NULL REFERENCES "locations"("id"),
+        "status" "material_location_status" DEFAULT 'active' NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_location_states_unique_idx" ON "material_location_states" USING btree ("material_id", "location_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "material_location_states_material_idx" ON "material_location_states" USING btree ("material_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "material_location_states_location_idx" ON "material_location_states" USING btree ("location_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "material_location_states_status_idx" ON "material_location_states" USING btree ("status");`;
+  }
+
+  if (materialsTableState?.tableName) {
+    await sql`
+      CREATE TABLE IF NOT EXISTS "bom_items" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "parent_material_id" uuid NOT NULL REFERENCES "materials"("id"),
+        "child_material_id" uuid NOT NULL REFERENCES "materials"("id"),
+        "quantity" numeric(12, 2) NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "bom_items_parent_child_idx" ON "bom_items" USING btree ("parent_material_id", "child_material_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "bom_items_parent_idx" ON "bom_items" USING btree ("parent_material_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "bom_items_child_idx" ON "bom_items" USING btree ("child_material_id");`;
   }
 }
 
