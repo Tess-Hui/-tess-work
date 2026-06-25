@@ -313,6 +313,11 @@ export async function deleteBomItemAction(formData: FormData) {
 export async function operateBomAction(formData: FormData) {
   await requireAuth();
   const parentMaterialId = text(formData, "parentMaterialId");
+  const returnTo = text(formData, "returnTo") || `/materials/items?edit=${parentMaterialId}#bom`;
+  const [returnPath, hash = ""] = returnTo.split("#");
+  const errorPrefix = returnPath.includes("?")
+    ? `${returnPath}&bomError=`
+    : `${returnPath}?bomError=`;
   try {
     await operateBom({
       parentMaterialId,
@@ -323,10 +328,10 @@ export async function operateBomAction(formData: FormData) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "failed";
-    redirect(`/materials/items?edit=${parentMaterialId}&bomError=${encodeURIComponent(reason)}#bom`);
+    redirect(`${errorPrefix}${encodeURIComponent(reason)}${hash ? `#${hash}` : ""}`);
   }
   revalidateApp();
-  redirect(`/materials/items?edit=${parentMaterialId}#bom`);
+  redirect(returnTo);
 }
 
 export async function saveMaterialSizeAction(formData: FormData) {
