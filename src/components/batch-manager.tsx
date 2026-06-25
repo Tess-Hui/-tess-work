@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Package, Search } from "lucide-react";
+import { Link2, Package, Search } from "lucide-react";
 
 import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
 import { EmptyState } from "@/components/empty-state";
@@ -12,19 +12,32 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { InventoryItemBars, formatInventoryNumber } from "@/components/inventory-item-bars";
-import { deleteBatchAction, operateBomAction, saveBatchAction } from "@/lib/actions";
-import { getBatchDetail, listBatchesWithBomMatches, listMaterials, listWarehouseLocations } from "@/lib/data";
+import { createLinkedTransferAction, deleteBatchAction, operateBomAction, saveBatchAction } from "@/lib/actions";
+import { getShanghaiDateString } from "@/lib/dates";
+import {
+  getBatchDetail,
+  getInventoryLinkGroupDetail,
+  getInventoryLinkBadgesForBatches,
+  listBatchesWithBomMatches,
+  listMaterialCategories,
+  listMaterials,
+  listWarehouseLocations,
+} from "@/lib/data";
 
 type Params = {
   date?: string;
   materialId?: string;
   materialName?: string;
+  category?: string;
   status?: string;
   supplier?: string;
   edit?: string;
   new?: string;
   deleted?: string;
   bomError?: string;
+  linkGroup?: string;
+  linkError?: string;
+  linkedTransfer?: string;
 };
 
 const statusLabels = {
@@ -40,19 +53,23 @@ const statusBadgeClasses = {
 } as const;
 
 export async function BatchManager({ searchParams }: { searchParams: Params }) {
-  const [batchData, materialItems, warehouseItems, editing] = await Promise.all([
+  const [batchData, materialItems, categoryItems, warehouseItems, editing, selectedLinkGroup] = await Promise.all([
     listBatchesWithBomMatches({
       date: searchParams.date,
       materialId: searchParams.materialId,
       materialName: searchParams.materialName,
+      category: searchParams.category,
       status: searchParams.status as never,
       supplier: searchParams.supplier,
     }),
     listMaterials(),
+    listMaterialCategories(),
     listWarehouseLocations(),
     getBatchDetail(searchParams.edit),
+    getInventoryLinkGroupDetail(searchParams.linkGroup),
   ]);
   const items = batchData.batches;
+  const linkGroupBadges = await getInventoryLinkBadgesForBatches(items);
   const showBomGroups = Boolean(searchParams.materialName?.trim() && batchData.bomGroups.length);
   const returnTo = batchReturnHref(searchParams);
 
@@ -68,7 +85,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
         </Button>
       </div>
 
-      <BatchFilters searchParams={searchParams} materials={materialItems} />
+      <BatchFilters searchParams={searchParams} materials={materialItems} categories={categoryItems} />
 
       {searchParams.deleted === "1" ? (
         <Card className="border-emerald-200 bg-emerald-50">
@@ -84,9 +101,24 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
         </Card>
       ) : null}
 
+      {searchParams.linkError ? (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4 text-sm text-red-700">
+            联动调货失败：{linkErrorMessage(searchParams.linkError)}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {searchParams.linkedTransfer === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">联动调货已完成。</CardContent>
+        </Card>
+      ) : null}
+
       {editing || searchParams.new === "1" ? (
         <BatchForm
           detail={editing}
+          categories={categoryItems}
           warehouseLocations={warehouseItems}
           isEditing={Boolean(editing)}
         />
@@ -97,6 +129,14 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
           groups={batchData.bomGroups}
           warehouses={warehouseItems}
           returnTo={returnTo}
+        />
+      ) : null}
+
+      {selectedLinkGroup ? (
+        <LinkedTransferPanel
+          group={selectedLinkGroup}
+          warehouses={warehouseItems}
+          returnTo={returnToWithLinkGroup(returnTo, selectedLinkGroup.id)}
         />
       ) : null}
 
@@ -118,6 +158,15 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                     ) : null}
                   </div>
                   <p className="mt-2 text-base font-semibold text-slate-950">{row.material.name}</p>
+                  {linkGroupBadges.get(row.batch.id)?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {linkGroupBadges.get(row.batch.id)?.map((group) => (
+                        <Badge key={group.id} className="border-sky-200 bg-sky-50 text-sky-700">
+                          已联动：{group.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-2 grid gap-1 text-sm text-slate-500 sm:grid-cols-2">
                     <span>制作数量：{Number(row.batch.quantity).toFixed(2)} {row.material.unit}</span>
                     <span>当前剩余：{row.currentRemaining.toFixed(2)} {row.material.unit}</span>
@@ -140,6 +189,14 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {linkGroupBadges.get(row.batch.id)?.[0] ? (
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href={batchLinkGroupHref(searchParams, linkGroupBadges.get(row.batch.id)?.[0]?.id ?? "")}>
+                        <Link2 className="h-4 w-4" />
+                        联动调货
+                      </Link>
+                    </Button>
+                  ) : null}
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/materials/batches/${row.batch.id}`}>详情</Link>
                   </Button>
@@ -166,10 +223,122 @@ function batchReturnHref(searchParams: Params) {
   const params = new URLSearchParams();
   if (searchParams.date) params.set("date", searchParams.date);
   if (searchParams.materialName) params.set("materialName", searchParams.materialName);
+  if (searchParams.category) params.set("category", searchParams.category);
   if (searchParams.status) params.set("status", searchParams.status);
   if (searchParams.supplier) params.set("supplier", searchParams.supplier);
   const query = params.toString();
   return query ? `/materials/batches?${query}` : "/materials/batches";
+}
+
+function returnToWithLinkGroup(returnTo: string, groupId: string) {
+  const separator = returnTo.includes("?") ? "&" : "?";
+  return `${returnTo}${separator}linkGroup=${groupId}`;
+}
+
+function batchLinkGroupHref(searchParams: Params, groupId: string) {
+  return returnToWithLinkGroup(batchReturnHref(searchParams), groupId);
+}
+
+function linkErrorMessage(reason: string) {
+  const labels: Record<string, string> = {
+    INSUFFICIENT_STOCK: "组内某项来源仓库库存不足，整组没有执行。",
+    LOCATION_REQUIRED: "请选择来源仓库和目标仓库。",
+    SAME_LOCATION: "来源仓库和目标仓库不能相同。",
+    NO_ITEMS: "请至少勾选一个项目并填写数量。",
+    ITEM_NOT_IN_GROUP: "项目不属于当前联动组。",
+  };
+  return labels[reason] ?? "请检查仓库、数量和组内项目。";
+}
+
+function LinkedTransferPanel({
+  group,
+  warehouses,
+  returnTo,
+}: {
+  group: NonNullable<Awaited<ReturnType<typeof getInventoryLinkGroupDetail>>>;
+  warehouses: Awaited<ReturnType<typeof listWarehouseLocations>>;
+  returnTo: string;
+}) {
+  return (
+    <Card className="border-sky-200" id="linked-transfer">
+      <CardHeader>
+        <CardTitle>联动调货：{group.name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form action={createLinkedTransferAction} className="grid gap-4">
+          <input type="hidden" name="groupId" value={group.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="调货日期">
+              <Input name="date" type="date" defaultValue={getShanghaiDateString()} required />
+            </Field>
+            <Field label="来源仓库">
+              <Select name="fromLocationId" required>
+                <option value="">选择来源仓库</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="目标仓库">
+              <Select name="toLocationId" required>
+                <option value="">选择目标仓库</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <div className="grid gap-2">
+            {group.items.length ? (
+              group.items.map((item, index) => (
+                <div key={item.id} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-[auto_1fr_0.6fr] md:items-center">
+                  <input type="hidden" name={`items[${index}].targetId`} value={item.targetId} />
+                  <input type="hidden" name={`items[${index}].targetType`} value={item.targetType} />
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      name={`items[${index}].enabled`}
+                      defaultChecked={item.defaultEnabled}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    参与
+                  </label>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950">
+                      {item.name}
+                      {item.batchCode ? <span className="ml-2 text-sm font-normal text-slate-500">{item.batchCode}</span> : null}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      当前进行中库存：{item.activeStock.toFixed(2)} {item.unit}
+                    </p>
+                  </div>
+                  <Field label="本次调货数量">
+                    <Input name={`items[${index}].quantity`} type="number" min="0" step="0.01" defaultValue="0" />
+                  </Field>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-500">
+                这个联动组还没有组内项目，请先到物料联动组页面添加。
+              </p>
+            )}
+          </div>
+
+          <Field label="备注">
+            <Textarea name="remark" placeholder="可填写这次调货说明" />
+          </Field>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SubmitButton variant="secondary">执行整组调货</SubmitButton>
+            <Button asChild variant="outline">
+              <Link href="/materials/links">维护联动组</Link>
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
 }
 
 function BomGroupSection({
@@ -279,19 +448,42 @@ function BomGroupSection({
 function BatchFilters({
   searchParams,
   materials,
+  categories,
 }: {
   searchParams: Params;
   materials: Awaited<ReturnType<typeof listMaterials>>;
+  categories: Awaited<ReturnType<typeof listMaterialCategories>>;
 }) {
   return (
     <Card>
       <CardContent className="pt-5">
-        <form className="grid gap-3 md:grid-cols-[0.9fr_1fr_0.9fr_1fr_auto_auto]">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Button asChild size="sm" variant={!searchParams.category ? "default" : "secondary"}>
+            <Link href="/materials/batches">全部分类</Link>
+          </Button>
+          {categories.slice(0, 8).map((category) => (
+            <Button
+              key={category}
+              asChild
+              size="sm"
+              variant={searchParams.category === category ? "default" : "secondary"}
+            >
+              <Link href={`/materials/batches?category=${encodeURIComponent(category)}`}>{category}</Link>
+            </Button>
+          ))}
+        </div>
+        <form className="grid gap-3 md:grid-cols-[0.9fr_1fr_0.8fr_0.9fr_1fr_auto_auto]">
           <Input name="date" type="date" defaultValue={searchParams.date} />
           <Input name="materialName" defaultValue={searchParams.materialName} placeholder="物料名称" list="batch-filter-materials" />
           <datalist id="batch-filter-materials">
             {materials.map((material) => <option key={material.id} value={material.name} />)}
           </datalist>
+          <Select name="category" defaultValue={searchParams.category ?? "all"}>
+            <option value="all">全部分类</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </Select>
           <Select name="status" defaultValue={searchParams.status ?? "all"}>
             <option value="all">全部状态</option>
             <option value="active">进行中</option>
@@ -314,10 +506,12 @@ function BatchFilters({
 
 function BatchForm({
   detail,
+  categories,
   warehouseLocations,
   isEditing,
 }: {
   detail: Awaited<ReturnType<typeof getBatchDetail>>;
+  categories: Awaited<ReturnType<typeof listMaterialCategories>>;
   warehouseLocations: Awaited<ReturnType<typeof listWarehouseLocations>>;
   isEditing: boolean;
 }) {
@@ -343,6 +537,13 @@ function BatchForm({
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="物料名称">
               <Input name="materialName" defaultValue={material?.name} placeholder="手动输入物料名称" required />
+            </Field>
+            <Field label="物料分类">
+              <Select name="materialCategory" defaultValue={material?.category || "未分类"}>
+                {[...new Set([material?.category, ...categories, "未分类"].filter(Boolean))].map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </Select>
             </Field>
             <Field label="制作日期">
               <Input name="productionDate" type="date" defaultValue={String(batch?.productionDate ?? "")} required />
