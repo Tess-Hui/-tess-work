@@ -16,6 +16,8 @@ import {
 
 import {
   fixedItems,
+  bomItems,
+  materialLocationStates,
   memos,
   materialSizes,
   materials,
@@ -31,6 +33,7 @@ import {
   type LocationType,
   type Memo,
   type Material,
+  type MaterialLocationStatus,
   type MaterialSize,
   type Movement,
   type MovementType,
@@ -76,6 +79,11 @@ type BatchFilters = {
 
 type MaterialFilters = {
   sort?: string;
+  search?: string;
+  category?: string;
+  warehouse?: string;
+  status?: MaterialLocationStatus | "all" | "alert";
+  alert?: string;
 };
 
 type MaterialSizeFilters = {
@@ -95,15 +103,17 @@ type InventoryBatchSummary = {
   stockDistribution: Array<{
     location: DbLocation;
     quantity: number;
+    status: InventoryReplenishState;
   }>;
   movements: Movement[];
 };
 
-type InventoryReplenishState = BatchStatus;
+type InventoryReplenishState = MaterialLocationStatus;
 
 type InventoryLocationItemSummary = {
   materialId: string;
   materialName: string;
+  category: string;
   stock: number;
   status: InventoryReplenishState;
   activeStock: number;
@@ -114,9 +124,30 @@ type InventoryLocationDetailRow = {
   batchCode: string;
   materialId: string;
   materialName: string;
+  category: string;
   quantity: number;
   status: InventoryReplenishState;
   sourceText: string;
+};
+
+type MaterialSummary = {
+  id: string;
+  name: string;
+  category: string;
+  type: string;
+  size: string;
+  unit: string;
+  remark: string;
+  createdAt: Date;
+  currentStock: number;
+  latestUsedAt: string | Date | null;
+  locations: Array<{
+    locationId: string;
+    locationName: string;
+    stock: number;
+    status: InventoryReplenishState;
+    activeStock: number;
+  }>;
 };
 
 function compact<T>(items: Array<T | undefined | null | false>) {
@@ -126,6 +157,18 @@ function compact<T>(items: Array<T | undefined | null | false>) {
 function searchValue(value?: string) {
   const clean = value?.trim();
   return clean ? `%${clean}%` : null;
+}
+
+export function inferMaterialCategory(name: string) {
+  if (name.includes("彩盒")) return "彩盒";
+  if (name.includes("贺卡")) return "贺卡";
+  if (name.includes("标签")) return "标签类";
+  return "未分类";
+}
+
+function materialCategory(input: { name: string; category?: string | null }) {
+  const manualCategory = input.category?.trim();
+  return manualCategory || inferMaterialCategory(input.name.trim());
 }
 
 function taskOrderBy(sort?: string) {
@@ -187,6 +230,14 @@ function mergeInventoryStatus(current: InventoryReplenishState | undefined, next
   if (current === "active" || next === "active") return "active";
   if (current === "used_up" || next === "used_up") return "used_up";
   return next;
+}
+
+function deriveLocationMaterialStatus(
+  configuredStatus: InventoryReplenishState | undefined,
+  stock: number,
+) {
+  if (configuredStatus) return configuredStatus;
+  return stock <= 0 ? "used_up" : "active";
 }
 
 export function calculateBatchStock(
@@ -617,7 +668,7 @@ function resolveBatchInitialWarehouseLocation(
 
 async function buildInventorySummary() {
   const db = await getDb();
-  const [locationItems, batchRows, movementItems] = await Promise.all([
+  const [locationItems, batchRows, movementItems, locationStateItems] = await Promise.all([
     listLocations(),
     db
       .select({ batch: batches, material: materials, initialLocation: locations })
@@ -626,6 +677,7 @@ async function buildInventorySummary() {
       .innerJoin(locations, eq(batches.initialLocationId, locations.id))
       .orderBy(desc(batches.productionDate), desc(batches.createdAt)),
     db.select().from(movements),
+    db.select().from(materialLocationStates),
   ]);
 
   const movementMap = new Map<string, Movement[]>();
@@ -637,6 +689,9 @@ async function buildInventorySummary() {
   }
 
   const locationById = new Map(locationItems.map((location) => [location.id, location]));
+  const locationStateMap = new Map(
+    locationStateItems.map((item) => [`${item.materialId}:${item.locationId}`, item.status]),
+  );
 
   const summaryMap = new Map<
     string,
@@ -649,20 +704,7 @@ async function buildInventorySummary() {
       detailRows: InventoryLocationDetailRow[];
     }
   >();
-  const materialSummaryMap = new Map<
-    string,
-    {
-      id: string;
-      name: string;
-      type: string;
-      size: string;
-      unit: string;
-      remark: string;
-      createdAt: Date;
-      currentStock: number;
-      latestUsedAt: string | Date | null;
-    }
-  >();
+  const materialSummaryMap = new Map<string, MaterialSummary>();
   const byBatch: InventoryBatchSummary[] = [];
 
   for (const location of locationItems) {
@@ -691,7 +733,17 @@ async function buildInventorySummary() {
     }
     const stockDistribution = locationItems
       .filter((location) => relatedLocationIds.has(location.id))
-      .map((location) => ({ location, quantity: detailStock.get(location.id) ?? 0 }));
+      .map((location) => {
+        const quantity = detailStock.get(location.id) ?? 0;
+        return {
+          location,
+          quantity,
+          status: deriveLocationMaterialStatus(
+            locationStateMap.get(`${row.material.id}:${location.id}`),
+            quantity,
+          ),
+        };
+      });
     const currentRemaining = stockDistribution.reduce((sum, item) => sum + item.quantity, 0);
 
     byBatch.push({
@@ -712,6 +764,7 @@ async function buildInventorySummary() {
       }
       if (row.material.createdAt > materialEntry.createdAt) {
         materialEntry.id = row.material.id;
+        materialEntry.category = row.material.category || materialEntry.category;
         materialEntry.type = row.material.type || materialEntry.type;
         materialEntry.size = row.material.size || materialEntry.size;
         materialEntry.unit = row.material.unit || materialEntry.unit;
@@ -722,6 +775,7 @@ async function buildInventorySummary() {
       materialSummaryMap.set(materialName, {
         id: row.material.id,
         name: materialName,
+        category: row.material.category,
         type: row.material.type,
         size: row.material.size,
         unit: row.material.unit,
@@ -729,10 +783,11 @@ async function buildInventorySummary() {
         createdAt: row.material.createdAt,
         currentStock: currentRemaining,
         latestUsedAt: latestMovement?.date ?? null,
+        locations: [],
       });
     }
 
-    for (const { location, quantity } of stockDistribution) {
+    for (const { location, quantity, status } of stockDistribution) {
       if (!location) continue;
 
       const summary = summaryMap.get(location.id);
@@ -743,18 +798,37 @@ async function buildInventorySummary() {
       const existingItem = summary.itemMap.get(materialName);
       if (existingItem) {
         existingItem.stock += quantity;
-        existingItem.status = mergeInventoryStatus(existingItem.status, effectiveBatch.status);
-        if (effectiveBatch.status === "active") {
+        existingItem.status = mergeInventoryStatus(existingItem.status, status);
+        if (status === "active") {
           existingItem.activeStock += quantity;
         }
       } else {
         summary.itemMap.set(materialName, {
           materialId: row.material.id,
           materialName,
+          category: row.material.category,
           stock: quantity,
-          status: effectiveBatch.status,
-          activeStock: effectiveBatch.status === "active" ? quantity : 0,
+          status,
+          activeStock: status === "active" ? quantity : 0,
         });
+      }
+
+      const locationMaterialEntry = materialSummaryMap.get(materialName);
+      if (locationMaterialEntry) {
+        const existingLocation = locationMaterialEntry.locations.find((item) => item.locationId === location.id);
+        if (existingLocation) {
+          existingLocation.stock += quantity;
+          existingLocation.status = mergeInventoryStatus(existingLocation.status, status);
+          if (status === "active") existingLocation.activeStock += quantity;
+        } else {
+          locationMaterialEntry.locations.push({
+            locationId: location.id,
+            locationName: location.name,
+            stock: quantity,
+            status,
+            activeStock: status === "active" ? quantity : 0,
+          });
+        }
       }
 
       const latestInbound = batchMovements.find((movement) => movement.toLocationId === location.id);
@@ -788,8 +862,9 @@ async function buildInventorySummary() {
         batchCode: effectiveBatch.batchCode,
         materialId: row.material.id,
         materialName,
+        category: row.material.category,
         quantity,
-        status: effectiveBatch.status,
+        status,
         sourceText,
       });
     }
@@ -811,7 +886,12 @@ async function buildInventorySummary() {
     }))
     .sort((a, b) => b.totalStock - a.totalStock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN"));
 
-  const byMaterial = [...materialSummaryMap.values()];
+  const byMaterial = [...materialSummaryMap.values()].map((item) => ({
+    ...item,
+    locations: item.locations
+      .filter((location) => Math.abs(location.stock) > 0.0001 || location.status !== "used_up")
+      .sort((a, b) => b.stock - a.stock || a.locationName.localeCompare(b.locationName, "zh-Hans-CN")),
+  }));
 
   return { byBatch, byLocation, byMaterial };
 }
@@ -879,9 +959,117 @@ export async function deleteLocation(id: string) {
   await db.delete(locations).where(eq(locations.id, id));
 }
 
+export async function setMaterialLocationStatus(input: {
+  materialId: string;
+  locationId: string;
+  status: MaterialLocationStatus;
+}) {
+  const db = await getDb();
+  const [state] = await db
+    .insert(materialLocationStates)
+    .values({
+      materialId: input.materialId,
+      locationId: input.locationId,
+      status: input.status,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [materialLocationStates.materialId, materialLocationStates.locationId],
+      set: { status: input.status, updatedAt: new Date() },
+    })
+    .returning();
+  return state;
+}
+
+export async function setMaterialStatusForAllWarehouses(materialId: string, status: MaterialLocationStatus) {
+  const summary = await getInventorySummary();
+  const material = summary.byMaterial.find((item) => item.id === materialId);
+  await Promise.all(
+    (material?.locations ?? []).map((location) =>
+      setMaterialLocationStatus({ materialId, locationId: location.locationId, status }),
+    ),
+  );
+}
+
+export async function listBomItems(parentMaterialId: string) {
+  const db = await getDb();
+  return db
+    .select({
+      bom: bomItems,
+      child: materials,
+    })
+    .from(bomItems)
+    .innerJoin(materials, eq(bomItems.childMaterialId, materials.id))
+    .where(eq(bomItems.parentMaterialId, parentMaterialId))
+    .orderBy(asc(materials.category), asc(materials.name));
+}
+
+export async function upsertBomItem(input: {
+  id?: string;
+  parentMaterialId: string;
+  childMaterialId: string;
+  quantity: number;
+}) {
+  if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  const db = await getDb();
+  if (input.id) {
+    const [item] = await db
+      .update(bomItems)
+      .set({
+        childMaterialId: input.childMaterialId,
+        quantity: numericValue(input.quantity),
+      })
+      .where(and(eq(bomItems.id, input.id), eq(bomItems.parentMaterialId, input.parentMaterialId)))
+      .returning();
+    return item;
+  }
+
+  const [item] = await db
+    .insert(bomItems)
+    .values({
+      parentMaterialId: input.parentMaterialId,
+      childMaterialId: input.childMaterialId,
+      quantity: numericValue(input.quantity),
+    })
+    .onConflictDoUpdate({
+      target: [bomItems.parentMaterialId, bomItems.childMaterialId],
+      set: { quantity: numericValue(input.quantity) },
+    })
+    .returning();
+  return item;
+}
+
+export async function deleteBomItem(id: string, parentMaterialId: string) {
+  const db = await getDb();
+  await db.delete(bomItems).where(and(eq(bomItems.id, id), eq(bomItems.parentMaterialId, parentMaterialId)));
+}
+
 export async function listMaterials(filters: MaterialFilters = {}) {
   const summary = await buildInventorySummary();
-  const items = [...summary.byMaterial];
+  const search = filters.search?.trim().toLowerCase();
+  const items = [...summary.byMaterial].filter((item) => {
+    if (filters.category && filters.category !== "all" && item.category !== filters.category) return false;
+    if (filters.warehouse && filters.warehouse !== "all") {
+      if (!item.locations.some((location) => location.locationId === filters.warehouse)) return false;
+    }
+    if (filters.status && filters.status !== "all" && filters.status !== "alert") {
+      if (!item.locations.some((location) => location.status === filters.status)) return false;
+    }
+    if ((filters.status === "alert" || filters.alert === "1") && !item.locations.some((location) => (
+      location.status === "active" && location.activeStock <= 50
+    ))) {
+      return false;
+    }
+    if (search) {
+      const haystack = [
+        item.category,
+        item.name,
+        ...item.locations.map((location) => location.locationName),
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
 
   switch (filters.sort) {
     case "created-asc":
@@ -910,17 +1098,31 @@ export async function upsertMaterial(
   id?: string,
 ) {
   const db = await getDb();
+  const values = {
+    ...input,
+    name: input.name.trim(),
+    category: materialCategory(input),
+  };
   if (id) {
     const [material] = await db
       .update(materials)
-      .set(input)
+      .set(values)
       .where(eq(materials.id, id))
       .returning();
     return material;
   }
 
-  const [material] = await db.insert(materials).values(input).returning();
+  const [material] = await db.insert(materials).values(values).returning();
   return material;
+}
+
+export async function listMaterialCategories() {
+  const db = await getDb();
+  const rows = await db
+    .selectDistinct({ category: materials.category })
+    .from(materials)
+    .orderBy(asc(materials.category));
+  return rows.map((row) => row.category).filter(Boolean);
 }
 
 export async function listMaterialSizes(filters: MaterialSizeFilters = {}) {
@@ -976,6 +1178,7 @@ export async function deleteMaterialSize(id: string) {
 
 export async function getOrCreateMaterialByName(input: {
   name: string;
+  category?: string;
   type: string;
   size: string;
   unit: string;
@@ -992,13 +1195,14 @@ export async function getOrCreateMaterialByName(input: {
   if (!existing) {
     const [material] = await db
       .insert(materials)
-      .values({ ...input, name })
+      .values({ ...input, name, category: materialCategory({ name, category: input.category }) })
       .returning();
     return material;
   }
 
   const next = {
     name,
+    category: materialCategory({ name, category: input.category || existing.category }),
     type: input.type.trim() || existing.type,
     size: input.size.trim() || existing.size,
     unit: input.unit.trim() || existing.unit,
@@ -1006,6 +1210,7 @@ export async function getOrCreateMaterialByName(input: {
   };
 
   if (
+    next.category === existing.category &&
     next.type === existing.type &&
     next.size === existing.size &&
     next.unit === existing.unit &&
@@ -1195,6 +1400,92 @@ export async function createMovement(input: {
     .returning();
   await refreshBatchStatus(input.batchId);
   return movement;
+}
+
+async function createMaterialMovement(input: {
+  materialId: string;
+  locationId: string;
+  toLocationId?: string | null;
+  quantity: number;
+  type: "CONSUME" | "TRANSFER";
+  remark: string;
+}) {
+  const summary = await getInventorySummary();
+  const batchesForMaterial = summary.byBatch
+    .filter((row) => row.batch.materialId === input.materialId)
+    .map((row) => ({
+      row,
+      stock: row.stockDistribution.find((item) => item.location.id === input.locationId)?.quantity ?? 0,
+    }))
+    .filter((item) => item.stock > 0)
+    .sort((a, b) => String(a.row.batch.productionDate).localeCompare(String(b.row.batch.productionDate)));
+
+  let remaining = input.quantity;
+  for (const item of batchesForMaterial) {
+    if (remaining <= 0.0001) break;
+    const quantity = Math.min(remaining, item.stock);
+    await createMovement({
+      batchId: item.row.batch.id,
+      date: getShanghaiDateString(),
+      type: input.type,
+      fromLocationId: input.locationId,
+      toLocationId: input.type === "TRANSFER" ? input.toLocationId : null,
+      quantity,
+      remark: input.remark,
+    });
+    remaining -= quantity;
+  }
+
+  if (remaining > 0.0001) throw new Error("INSUFFICIENT_STOCK");
+}
+
+export async function operateBom(input: {
+  parentMaterialId: string;
+  locationId: string;
+  toLocationId?: string | null;
+  quantity: number;
+  operation: "consume" | "transfer" | "inactive";
+}) {
+  const bomRows = await listBomItems(input.parentMaterialId);
+  if (!bomRows.length) throw new Error("BOM_EMPTY");
+
+  if (input.operation === "inactive") {
+    await Promise.all(
+      bomRows.map((row) =>
+        setMaterialLocationStatus({
+          materialId: row.bom.childMaterialId,
+          locationId: input.locationId,
+          status: "inactive",
+        }),
+      ),
+    );
+    return;
+  }
+
+  if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.operation === "transfer" && !input.toLocationId) throw new Error("TARGET_REQUIRED");
+
+  const summary = await getInventorySummary();
+  for (const row of bomRows) {
+    const requiredQuantity = numberValue(row.bom.quantity) * input.quantity;
+    const availableQuantity = summary.byBatch
+      .filter((batchRow) => batchRow.batch.materialId === row.bom.childMaterialId)
+      .reduce((sum, batchRow) => (
+        sum + (batchRow.stockDistribution.find((item) => item.location.id === input.locationId)?.quantity ?? 0)
+      ), 0);
+    if (availableQuantity + 0.0001 < requiredQuantity) throw new Error("INSUFFICIENT_STOCK");
+  }
+
+  for (const row of bomRows) {
+    await createMaterialMovement({
+      materialId: row.bom.childMaterialId,
+      locationId: input.locationId,
+      toLocationId: input.toLocationId,
+      quantity: numberValue(row.bom.quantity) * input.quantity,
+      type: input.operation === "transfer" ? "TRANSFER" : "CONSUME",
+      remark: `BOM ${input.operation === "transfer" ? "一键调拨" : "一键出库"}`,
+    });
+  }
 }
 
 export async function updateMovement(input: {

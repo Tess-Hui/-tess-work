@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { InventoryItemBars, formatInventoryNumber } from "@/components/inventory-item-bars";
-import { deleteLocationAction, saveLocationAction } from "@/lib/actions";
+import { deleteLocationAction, saveLocationAction, updateMaterialLocationStatusAction } from "@/lib/actions";
 import { getLocationStockSummary, listLocations } from "@/lib/data";
 
 type Params = { edit?: string; new?: string; error?: string; type?: string };
@@ -19,6 +19,18 @@ type Params = { edit?: string; new?: string; error?: string; type?: string };
 const typeLabels = {
   warehouse: "仓库",
   other: "其他",
+} as const;
+
+const statusLabels = {
+  active: "进行中",
+  used_up: "已用完",
+  inactive: "已停用",
+} as const;
+
+const statusClasses = {
+  active: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  used_up: "border-slate-200 bg-slate-50 text-slate-600",
+  inactive: "border-slate-200 bg-slate-50 text-slate-600",
 } as const;
 
 export async function LocationManager({ searchParams }: { searchParams: Params }) {
@@ -135,6 +147,34 @@ export async function LocationManager({ searchParams }: { searchParams: Params }
                 )}
                 </div>
                 <InventoryItemBars items={card.items} limit={5} detailHref={detailHref} />
+                {card.location.type === "warehouse" && card.items.length ? (
+                  <div className="grid gap-2 border-t border-slate-100 pt-3">
+                    {card.items.slice(0, 3).map((item) => (
+                      <form
+                        key={`${card.location.id}-${item.materialId}`}
+                        action={updateMaterialLocationStatusAction}
+                        className="grid gap-2 rounded-md bg-slate-50 p-2 sm:grid-cols-[1fr_auto] sm:items-center"
+                      >
+                        <input type="hidden" name="locationId" value={card.location.id} />
+                        <input type="hidden" name="materialId" value={item.materialId} />
+                        <div className="min-w-0 text-sm">
+                          <span className="font-medium text-slate-800">{item.materialName}</span>
+                          <Badge className={`ml-2 ${statusClasses[item.status ?? "active"]}`}>
+                            {statusLabels[item.status ?? "active"]}
+                          </Badge>
+                        </div>
+                        <div className="flex gap-2">
+                          <Select name="status" defaultValue={item.status ?? "active"} className="h-9 text-xs">
+                            <option value="active">进行中</option>
+                            <option value="inactive">已停用</option>
+                            <option value="used_up">已用完</option>
+                          </Select>
+                          <SubmitButton size="sm" variant="secondary">更新</SubmitButton>
+                        </div>
+                      </form>
+                    ))}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           );

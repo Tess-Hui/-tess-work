@@ -22,6 +22,11 @@ export const batchStatusEnum = pgEnum("batch_status", [
   "used_up",
   "inactive",
 ]);
+export const materialLocationStatusEnum = pgEnum("material_location_status", [
+  "active",
+  "used_up",
+  "inactive",
+]);
 export const locationTypeEnum = pgEnum("location_type", [
   "warehouse",
   "factory",
@@ -136,6 +141,7 @@ export const materials = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     name: text("name").notNull(),
+    category: text("category").notNull().default("未分类"),
     type: text("type").notNull().default(""),
     size: text("size").notNull().default(""),
     unit: text("unit").notNull().default(""),
@@ -146,6 +152,7 @@ export const materials = pgTable(
   },
   (table) => [
     index("materials_name_idx").on(table.name),
+    index("materials_category_idx").on(table.category),
     index("materials_type_idx").on(table.type),
   ],
 );
@@ -240,6 +247,51 @@ export const movements = pgTable(
   ],
 );
 
+export const materialLocationStates = pgTable(
+  "material_location_states",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    materialId: uuid("material_id")
+      .notNull()
+      .references(() => materials.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    status: materialLocationStatusEnum("status").notNull().default("active"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("material_location_states_unique_idx").on(table.materialId, table.locationId),
+    index("material_location_states_material_idx").on(table.materialId),
+    index("material_location_states_location_idx").on(table.locationId),
+    index("material_location_states_status_idx").on(table.status),
+  ],
+);
+
+export const bomItems = pgTable(
+  "bom_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    parentMaterialId: uuid("parent_material_id")
+      .notNull()
+      .references(() => materials.id),
+    childMaterialId: uuid("child_material_id")
+      .notNull()
+      .references(() => materials.id),
+    quantity: numeric("quantity", { precision: 12, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("bom_items_parent_child_idx").on(table.parentMaterialId, table.childMaterialId),
+    index("bom_items_parent_idx").on(table.parentMaterialId),
+    index("bom_items_child_idx").on(table.childMaterialId),
+  ],
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type FixedItem = typeof fixedItems.$inferSelect;
@@ -250,8 +302,11 @@ export type MaterialSize = typeof materialSizes.$inferSelect;
 export type Batch = typeof batches.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Movement = typeof movements.$inferSelect;
+export type MaterialLocationState = typeof materialLocationStates.$inferSelect;
+export type BomItem = typeof bomItems.$inferSelect;
 export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "todo" | "completed" | "trashed";
 export type BatchStatus = "active" | "used_up" | "inactive";
+export type MaterialLocationStatus = "active" | "used_up" | "inactive";
 export type LocationType = "warehouse" | "factory" | "other";
 export type MovementType = "OUT" | "TRANSFER" | "RETURN" | "SCRAP" | "CONSUME" | "STOCK_IN";

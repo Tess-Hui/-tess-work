@@ -111,8 +111,8 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                         materialId: stock.location.id,
                         materialName: stock.location.name,
                         stock: stock.quantity,
-                        status: row.batch.status,
-                        activeStock: row.batch.status === "active" ? stock.quantity : 0,
+                        status: stock.status,
+                        activeStock: stock.status === "active" ? stock.quantity : 0,
                       }))}
                       limit={5}
                       detailHref={`/materials/batches/${row.batch.id}`}

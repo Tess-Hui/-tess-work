@@ -4,6 +4,9 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { SubmitButton } from "@/components/submit-button";
+import { updateMaterialLocationStatusAction } from "@/lib/actions";
 import { getLocationInventoryDetail } from "@/lib/data";
 
 function formatInventoryNumber(value: number) {
@@ -89,9 +92,21 @@ export async function LocationInventoryDetail({ id }: { id: string }) {
                       </p>
                     </div>
                   </div>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/materials/batches/${row.batchId}`}>查看批次</Link>
-                  </Button>
+                  <div className="grid gap-2">
+                    <form action={updateMaterialLocationStatusAction} className="flex gap-2">
+                      <input type="hidden" name="materialId" value={row.materialId} />
+                      <input type="hidden" name="locationId" value={detail.locationId} />
+                      <Select name="status" defaultValue={row.status} className="h-9 text-xs">
+                        <option value="active">进行中</option>
+                        <option value="inactive">已停用</option>
+                        <option value="used_up">已用完</option>
+                      </Select>
+                      <SubmitButton size="sm" variant="secondary">更新状态</SubmitButton>
+                    </form>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/materials/batches/${row.batchId}`}>查看批次</Link>
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))

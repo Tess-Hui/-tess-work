@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import type { BatchStatus, LocationType, MovementType, Priority } from "@/db/schema";
+import type { BatchStatus, LocationType, MaterialLocationStatus, MovementType, Priority } from "@/db/schema";
 import {
   createBatch,
   createMovement,
+  deleteBomItem,
   completeTask,
   createTask,
   deleteBatch,
@@ -34,6 +35,10 @@ import {
   upsertMaterial,
   upsertReminder,
   listWarehouseLocations,
+  operateBom,
+  setMaterialLocationStatus,
+  setMaterialStatusForAllWarehouses,
+  upsertBomItem,
 } from "@/lib/data";
 import { login, logout, requireAuth } from "@/lib/auth";
 import { parseDateInput, parseDateTimeInput } from "@/lib/dates";
@@ -256,10 +261,72 @@ export async function saveMaterialAction(formData: FormData) {
     type: text(formData, "type"),
     size: text(formData, "size"),
     unit: text(formData, "unit"),
+    category: text(formData, "category"),
     remark: text(formData, "remark"),
   }, id || undefined);
   revalidateApp();
   redirect("/materials/items");
+}
+
+function materialLocationStatus(formData: FormData) {
+  const status = text(formData, "status");
+  return (["active", "used_up", "inactive"].includes(status) ? status : "active") as MaterialLocationStatus;
+}
+
+export async function updateMaterialLocationStatusAction(formData: FormData) {
+  await requireAuth();
+  await setMaterialLocationStatus({
+    materialId: text(formData, "materialId"),
+    locationId: text(formData, "locationId"),
+    status: materialLocationStatus(formData),
+  });
+  revalidateApp();
+}
+
+export async function updateMaterialAllLocationsStatusAction(formData: FormData) {
+  await requireAuth();
+  await setMaterialStatusForAllWarehouses(text(formData, "materialId"), materialLocationStatus(formData));
+  revalidateApp();
+}
+
+export async function saveBomItemAction(formData: FormData) {
+  await requireAuth();
+  const parentMaterialId = text(formData, "parentMaterialId");
+  await upsertBomItem({
+    id: text(formData, "id") || undefined,
+    parentMaterialId,
+    childMaterialId: text(formData, "childMaterialId"),
+    quantity: numberField(formData, "quantity"),
+  });
+  revalidateApp();
+  redirect(`/materials/items?edit=${parentMaterialId}#bom`);
+}
+
+export async function deleteBomItemAction(formData: FormData) {
+  await requireAuth();
+  const parentMaterialId = text(formData, "parentMaterialId");
+  await deleteBomItem(text(formData, "id"), parentMaterialId);
+  revalidateApp();
+  redirect(`/materials/items?edit=${parentMaterialId}#bom`);
+}
+
+export async function operateBomAction(formData: FormData) {
+  await requireAuth();
+  const parentMaterialId = text(formData, "parentMaterialId");
+  try {
+    await operateBom({
+      parentMaterialId,
+      locationId: text(formData, "locationId"),
+      toLocationId: text(formData, "toLocationId") || null,
+      quantity: numberField(formData, "quantity"),
+      operation: text(formData, "operation") as "consume" | "transfer" | "inactive",
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/items?edit=${parentMaterialId}&bomError=${encodeURIComponent(reason)}#bom`);
+  }
+  revalidateApp();
+  redirect(`/materials/items?edit=${parentMaterialId}#bom`);
 }
 
 export async function saveMaterialSizeAction(formData: FormData) {

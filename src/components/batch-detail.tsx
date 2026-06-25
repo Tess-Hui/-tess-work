@@ -76,6 +76,11 @@ function movementBadgeClass(type: keyof typeof movementLabels) {
   }
 }
 
+function statusBadgeClass(status: keyof typeof statusLabels) {
+  if (status === "active") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 export async function BatchDetail({
   id,
   error,
@@ -181,19 +186,22 @@ export async function BatchDetail({
                   <div className="min-w-0">
                     <p className="truncate font-medium text-slate-950">{item.location.name}</p>
                     <p className="mt-1 text-xs text-slate-500">当前库存</p>
+                    <Badge className={`mt-2 ${statusBadgeClass(item.status)}`}>
+                      {statusLabels[item.status]}
+                    </Badge>
                   </div>
-                  {isLowStock(item.quantity) ? (
+                  {item.status === "active" && isLowStock(item.quantity) ? (
                     <span className="shrink-0 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
                       库存告急
                     </span>
                   ) : null}
                 </div>
-                <p className={`mt-2 text-2xl font-semibold ${isLowStock(item.quantity) ? "text-red-700" : "text-slate-950"}`}>
+                <p className={`mt-2 text-2xl font-semibold ${item.status === "active" && isLowStock(item.quantity) ? "text-red-700" : "text-slate-950"}`}>
                   {formatQuantity(item.quantity)} {detail.material.unit}
                 </p>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                   <div
-                    className={`h-full rounded-full ${isLowStock(item.quantity) ? "bg-red-500" : "bg-emerald-500"}`}
+                    className={`h-full rounded-full ${item.status === "active" && isLowStock(item.quantity) ? "bg-red-500" : "bg-emerald-500"}`}
                     style={{ width: stockBarWidth(item.quantity, maxDistributionQuantity) }}
                   />
                 </div>
