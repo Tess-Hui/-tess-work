@@ -6,6 +6,7 @@ import {
   eq,
   gte,
   ilike,
+  inArray,
   lt,
   lte,
   ne,
@@ -17,7 +18,10 @@ import {
 import {
   fixedItems,
   bomItems,
+  inventoryLinkGroupItems,
+  inventoryLinkGroups,
   materialLocationStates,
+  materialCategories,
   memos,
   materialSizes,
   materials,
@@ -30,10 +34,13 @@ import {
   type BatchStatus,
   type BomItem,
   type FixedItem,
+  type InventoryLinkScope,
+  type InventoryLinkTargetType,
   type Location as DbLocation,
   type LocationType,
   type Memo,
   type Material,
+  type MaterialCategory,
   type MaterialLocationStatus,
   type MaterialSize,
   type Movement,
@@ -74,6 +81,7 @@ type BatchFilters = {
   date?: string;
   materialId?: string;
   materialName?: string;
+  category?: string;
   status?: BatchStatus | "all";
   supplier?: string;
 };
@@ -1250,12 +1258,80 @@ export async function upsertMaterial(
 }
 
 export async function listMaterialCategories() {
+  const items = await listMaterialCategoryItems();
+  return items.map((item) => item.name);
+}
+
+export async function listMaterialCategoryItems() {
   const db = await getDb();
   const rows = await db
+    .select()
+    .from(materialCategories)
+    .orderBy(asc(materialCategories.sortOrder), asc(materialCategories.name));
+
+  if (rows.length) return rows;
+
+  const fallback = await db
     .selectDistinct({ category: materials.category })
     .from(materials)
     .orderBy(asc(materials.category));
-  return rows.map((row) => row.category).filter(Boolean);
+  return fallback
+    .map((row, index) => ({
+      id: row.category,
+      name: row.category,
+      sortOrder: index,
+      createdAt: new Date(),
+    }))
+    .filter((row) => Boolean(row.name)) as MaterialCategory[];
+}
+
+export async function upsertMaterialCategory(input: {
+  name: string;
+  sortOrder: number;
+}, id?: string) {
+  const db = await getDb();
+  const values = {
+    name: input.name.trim(),
+    sortOrder: Number.isFinite(input.sortOrder) ? input.sortOrder : 0,
+  };
+  if (!values.name) throw new Error("CATEGORY_NAME_REQUIRED");
+
+  if (id) {
+    const [category] = await db
+      .update(materialCategories)
+      .set(values)
+      .where(eq(materialCategories.id, id))
+      .returning();
+    return category;
+  }
+
+  const [category] = await db
+    .insert(materialCategories)
+    .values(values)
+    .onConflictDoUpdate({
+      target: materialCategories.name,
+      set: { sortOrder: values.sortOrder },
+    })
+    .returning();
+  return category;
+}
+
+export async function deleteMaterialCategory(id: string) {
+  const db = await getDb();
+  const [category] = await db
+    .select()
+    .from(materialCategories)
+    .where(eq(materialCategories.id, id))
+    .limit(1);
+  if (!category) return;
+
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(materials)
+    .where(eq(materials.category, category.name));
+  if (value > 0) throw new Error("CATEGORY_IN_USE");
+
+  await db.delete(materialCategories).where(eq(materialCategories.id, id));
 }
 
 export async function listMaterialSizes(filters: MaterialSizeFilters = {}) {
@@ -1378,6 +1454,7 @@ export async function listBatches(filters: BatchFilters = {}) {
   return summary.byBatch.filter((row) => {
     if (filters.date && String(row.batch.productionDate) !== filters.date) return false;
     if (filters.materialId && row.batch.materialId !== filters.materialId) return false;
+    if (filters.category && filters.category !== "all" && row.material.category !== filters.category) return false;
     if (materialQuery) {
       const materialMatch = [
         row.material.name,
@@ -1430,6 +1507,296 @@ export async function listBatchesWithBomMatches(filters: BatchFilters = {}) {
   };
 }
 
+export type InventoryLinkGroupDetail = Awaited<ReturnType<typeof listInventoryLinkGroups>>[number];
+
+function normalizeInventoryLinkScope(scope?: string | null): InventoryLinkScope {
+  return scope === "batch" ? "batch" : "material";
+}
+
+function normalizeInventoryLinkTargetType(type?: string | null): InventoryLinkTargetType {
+  return type === "batch" ? "batch" : "material";
+}
+
+export async function listInventoryLinkGroups() {
+  const [db, summary] = await Promise.all([getDb(), getInventorySummary()]);
+  const rows = await db
+    .select({
+      group: inventoryLinkGroups,
+      item: inventoryLinkGroupItems,
+      material: materials,
+      batch: batches,
+    })
+    .from(inventoryLinkGroups)
+    .leftJoin(inventoryLinkGroupItems, eq(inventoryLinkGroups.id, inventoryLinkGroupItems.groupId))
+    .leftJoin(materials, eq(inventoryLinkGroupItems.materialId, materials.id))
+    .leftJoin(batches, eq(inventoryLinkGroupItems.batchId, batches.id))
+    .orderBy(desc(inventoryLinkGroups.createdAt), asc(inventoryLinkGroupItems.sortOrder));
+
+  const batchMaterialIds = rows
+    .map((row) => row.batch?.materialId)
+    .filter((id): id is string => Boolean(id));
+  const batchMaterialRows = batchMaterialIds.length
+    ? await db.select().from(materials).where(inArray(materials.id, batchMaterialIds))
+    : [];
+  const batchMaterialById = new Map(batchMaterialRows.map((material) => [material.id, material]));
+  const groupMap = new Map<string, {
+    id: string;
+    name: string;
+    scope: InventoryLinkScope;
+    createdAt: Date;
+    items: Array<{
+      id: string;
+      targetType: InventoryLinkTargetType;
+      targetId: string;
+      materialId: string;
+      batchId: string | null;
+      name: string;
+      batchCode: string | null;
+      category: string;
+      unit: string;
+      defaultEnabled: boolean;
+      activeStock: number;
+      locations: Array<{ locationId: string; locationName: string; stock: number; status: MaterialLocationStatus }>;
+    }>;
+  }>();
+
+  for (const row of rows) {
+    const scope = normalizeInventoryLinkScope(row.group.scope);
+    const group = groupMap.get(row.group.id) ?? {
+      id: row.group.id,
+      name: row.group.name,
+      scope,
+      createdAt: row.group.createdAt,
+      items: [],
+    };
+    groupMap.set(row.group.id, group);
+
+    if (!row.item) continue;
+    const targetType = normalizeInventoryLinkTargetType(row.item.targetType);
+    const material = targetType === "batch" && row.batch
+      ? batchMaterialById.get(row.batch.materialId)
+      : row.material;
+    if (!material) continue;
+
+    const batchSummary = row.batch
+      ? summary.byBatch.find((batchRow) => batchRow.batch.id === row.batch?.id)
+      : null;
+    const materialSummary = summary.byMaterial.find((item) => item.id === material.id);
+    const locationsForItem = batchSummary
+      ? batchSummary.stockDistribution.map((stock) => ({
+        locationId: stock.location.id,
+        locationName: stock.location.name,
+        stock: stock.quantity,
+        status: stock.status,
+      }))
+      : materialSummary?.locations.map((location) => ({
+        locationId: location.locationId,
+        locationName: location.locationName,
+        stock: location.stock,
+        status: location.status,
+      })) ?? [];
+
+    group.items.push({
+      id: row.item.id,
+      targetType,
+      targetId: targetType === "batch" ? row.item.batchId ?? "" : material.id,
+      materialId: material.id,
+      batchId: row.item.batchId,
+      name: material.name,
+      batchCode: row.batch?.batchCode ?? null,
+      category: material.category,
+      unit: material.unit,
+      defaultEnabled: row.item.defaultEnabled,
+      activeStock: locationsForItem.reduce((sum, location) => (
+        sum + (location.status === "active" ? location.stock : 0)
+      ), 0),
+      locations: locationsForItem,
+    });
+  }
+
+  return [...groupMap.values()];
+}
+
+export async function getInventoryLinkGroupDetail(id?: string | null) {
+  if (!id) return null;
+  const groups = await listInventoryLinkGroups();
+  return groups.find((group) => group.id === id) ?? null;
+}
+
+export async function listInventoryLinkGroupsForBatch(batchId?: string | null) {
+  if (!batchId) return [];
+  const detail = await getBatchDetail(batchId);
+  if (!detail) return [];
+  const groups = await listInventoryLinkGroups();
+  return groups.filter((group) => group.items.some((item) => (
+    item.batchId === batchId || item.materialId === detail.material.id
+  )));
+}
+
+export async function getInventoryLinkBadgesForBatches(batchRows: InventoryBatchSummary[]) {
+  const groups = await listInventoryLinkGroups();
+  const map = new Map<string, InventoryLinkGroupDetail[]>();
+
+  for (const row of batchRows) {
+    const matched = groups.filter((group) => group.items.some((item) => (
+      item.batchId === row.batch.id || item.materialId === row.material.id
+    )));
+    if (matched.length) map.set(row.batch.id, matched);
+  }
+  return map;
+}
+
+export async function upsertInventoryLinkGroup(input: {
+  id?: string;
+  name: string;
+  scope: InventoryLinkScope;
+}) {
+  const db = await getDb();
+  const values = {
+    name: input.name.trim(),
+    scope: normalizeInventoryLinkScope(input.scope),
+  };
+  if (!values.name) throw new Error("GROUP_NAME_REQUIRED");
+
+  if (input.id) {
+    const [group] = await db
+      .update(inventoryLinkGroups)
+      .set(values)
+      .where(eq(inventoryLinkGroups.id, input.id))
+      .returning();
+    return group;
+  }
+
+  const [group] = await db.insert(inventoryLinkGroups).values(values).returning();
+  return group;
+}
+
+export async function addInventoryLinkGroupItem(input: {
+  groupId: string;
+  targetType: InventoryLinkTargetType;
+  materialId?: string | null;
+  batchId?: string | null;
+}) {
+  const db = await getDb();
+  const [group] = await db
+    .select()
+    .from(inventoryLinkGroups)
+    .where(eq(inventoryLinkGroups.id, input.groupId))
+    .limit(1);
+  if (!group) throw new Error("GROUP_NOT_FOUND");
+
+  const targetType = normalizeInventoryLinkTargetType(input.targetType);
+  if (normalizeInventoryLinkScope(group.scope) !== targetType) throw new Error("GROUP_SCOPE_MISMATCH");
+
+  let materialId = input.materialId || null;
+  let batchId = input.batchId || null;
+  if (targetType === "batch") {
+    if (!batchId) throw new Error("BATCH_REQUIRED");
+    const [batch] = await db.select().from(batches).where(eq(batches.id, batchId)).limit(1);
+    if (!batch) throw new Error("BATCH_NOT_FOUND");
+    materialId = batch.materialId;
+  } else {
+    batchId = null;
+    if (!materialId) throw new Error("MATERIAL_REQUIRED");
+  }
+
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(inventoryLinkGroupItems)
+    .where(eq(inventoryLinkGroupItems.groupId, input.groupId));
+
+  const [item] = await db
+    .insert(inventoryLinkGroupItems)
+    .values({
+      groupId: input.groupId,
+      targetType,
+      materialId,
+      batchId,
+      sortOrder: value,
+      defaultEnabled: true,
+    })
+    .onConflictDoNothing()
+    .returning();
+  return item ?? null;
+}
+
+export async function removeInventoryLinkGroupItem(id: string) {
+  const db = await getDb();
+  await db.delete(inventoryLinkGroupItems).where(eq(inventoryLinkGroupItems.id, id));
+}
+
+export async function createLinkedTransfer(input: {
+  groupId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  date: string;
+  remark: string;
+  items: Array<{
+    targetId: string;
+    targetType: InventoryLinkTargetType;
+    enabled: boolean;
+    quantity: number;
+  }>;
+}) {
+  if (!input.fromLocationId || !input.toLocationId) throw new Error("LOCATION_REQUIRED");
+  if (input.fromLocationId === input.toLocationId) throw new Error("SAME_LOCATION");
+
+  const group = await getInventoryLinkGroupDetail(input.groupId);
+  if (!group) throw new Error("GROUP_NOT_FOUND");
+
+  const enabledItems = input.items
+    .filter((item) => item.enabled && item.quantity > 0)
+    .map((item) => ({
+      ...item,
+      targetType: normalizeInventoryLinkTargetType(item.targetType),
+    }));
+  if (!enabledItems.length) throw new Error("NO_ITEMS");
+
+  const summary = await getInventorySummary();
+  for (const item of enabledItems) {
+    const groupItem = group.items.find((row) => row.targetId === item.targetId && row.targetType === item.targetType);
+    if (!groupItem) throw new Error("ITEM_NOT_IN_GROUP");
+    const available = item.targetType === "batch"
+      ? summary.byBatch
+        .find((row) => row.batch.id === item.targetId)
+        ?.stockDistribution.find((stock) => (
+          stock.location.id === input.fromLocationId && stock.status === "active"
+        ))?.quantity ?? 0
+      : summary.byBatch
+        .filter((row) => row.batch.materialId === item.targetId)
+        .reduce((sum, row) => (
+          sum + (row.stockDistribution.find((stock) => (
+            stock.location.id === input.fromLocationId && stock.status === "active"
+          ))?.quantity ?? 0)
+        ), 0);
+    if (available + 0.0001 < item.quantity) throw new Error("INSUFFICIENT_STOCK");
+  }
+
+  for (const item of enabledItems) {
+    if (item.targetType === "batch") {
+      await createMovement({
+        batchId: item.targetId,
+        date: input.date,
+        type: "TRANSFER",
+        fromLocationId: input.fromLocationId,
+        toLocationId: input.toLocationId,
+        quantity: item.quantity,
+        remark: input.remark || `联动组调货：${group.name}`,
+      });
+    } else {
+      await createMaterialMovement({
+        materialId: item.targetId,
+        locationId: input.fromLocationId,
+        toLocationId: input.toLocationId,
+        quantity: item.quantity,
+        type: "TRANSFER",
+        remark: input.remark || `联动组调货：${group.name}`,
+        date: input.date,
+      });
+    }
+  }
+}
+
 export async function getBatchDetail(id?: string | null) {
   if (!id) return null;
   const [summary, locationItems] = await Promise.all([getInventorySummary(), listLocations()]);
@@ -1440,6 +1807,7 @@ export async function getBatchDetail(id?: string | null) {
 
 export async function createBatch(input: {
   materialName: string;
+  materialCategory?: string;
   materialType: string;
   materialSize: string;
   materialUnit: string;
@@ -1456,6 +1824,7 @@ export async function createBatch(input: {
   const db = await getDb();
   const material = await getOrCreateMaterialByName({
     name: input.materialName,
+    category: input.materialCategory,
     type: input.materialType,
     size: input.materialSize,
     unit: input.materialUnit,
@@ -1486,6 +1855,7 @@ export async function updateBatch(
   id: string,
   input: {
     materialName: string;
+    materialCategory?: string;
     materialType: string;
     materialSize: string;
     materialUnit: string;
@@ -1503,6 +1873,7 @@ export async function updateBatch(
   const db = await getDb();
   const material = await getOrCreateMaterialByName({
     name: input.materialName,
+    category: input.materialCategory,
     type: input.materialType,
     size: input.materialSize,
     unit: input.materialUnit,
@@ -1532,6 +1903,7 @@ export async function updateBatch(
 
 export async function deleteBatch(id: string) {
   const db = await getDb();
+  await db.delete(inventoryLinkGroupItems).where(eq(inventoryLinkGroupItems.batchId, id));
   await db.delete(movements).where(eq(movements.batchId, id));
   await db.delete(batches).where(eq(batches.id, id));
 }
@@ -1596,6 +1968,7 @@ async function createMaterialMovement(input: {
   quantity: number;
   type: "CONSUME" | "TRANSFER";
   remark: string;
+  date?: string;
 }) {
   const summary = await getInventorySummary();
   const batchesForMaterial = summary.byBatch
@@ -1615,7 +1988,7 @@ async function createMaterialMovement(input: {
     const quantity = Math.min(remaining, item.stock);
     await createMovement({
       batchId: item.row.batch.id,
-      date: getShanghaiDateString(),
+      date: input.date || getShanghaiDateString(),
       type: input.type,
       fromLocationId: input.locationId,
       toLocationId: input.type === "TRANSFER" ? input.toLocationId : null,
