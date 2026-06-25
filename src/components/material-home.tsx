@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Plus, Warehouse } from "lucide-react";
+import { Download, Link2, Plus, Tags, Warehouse } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +58,18 @@ export async function MaterialHome() {
         </Button>
         <Button asChild variant="secondary">
           <Link href="/locations">各仓库库存分布</Link>
+        </Button>
+        <Button asChild variant="secondary">
+          <Link href="/materials/links">
+            <Link2 className="h-4 w-4" />
+            物料联动组
+          </Link>
+        </Button>
+        <Button asChild variant="secondary">
+          <Link href="/materials/categories">
+            <Tags className="h-4 w-4" />
+            物料分类
+          </Link>
         </Button>
       </section>
 
