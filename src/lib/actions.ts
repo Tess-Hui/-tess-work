@@ -3,9 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import type { BatchStatus, LocationType, MaterialLocationStatus, MovementType, Priority } from "@/db/schema";
+import type {
+  BatchStatus,
+  InventoryLinkScope,
+  InventoryLinkTargetType,
+  LocationType,
+  MaterialLocationStatus,
+  MovementType,
+  Priority,
+} from "@/db/schema";
 import {
+  addInventoryLinkGroupItem,
   createBatch,
+  createLinkedTransfer,
   createMovement,
   deleteBomItem,
   completeTask,
@@ -13,6 +23,7 @@ import {
   deleteBatch,
   deleteFixedItem,
   deleteLocation,
+  deleteMaterialCategory,
   deleteMaterialSize,
   deleteMemo,
   deleteMovement,
@@ -29,13 +40,16 @@ import {
   updateBatch,
   updateMovement,
   upsertFixedItem,
+  upsertInventoryLinkGroup,
   upsertLocation,
+  upsertMaterialCategory,
   upsertMaterialSize,
   upsertMemo,
   upsertMaterial,
   upsertReminder,
   listWarehouseLocations,
   operateBom,
+  removeInventoryLinkGroupItem,
   setMaterialLocationStatus,
   setMaterialStatusForAllWarehouses,
   upsertBomItem,
@@ -70,6 +84,8 @@ function revalidateApp() {
     "/materials",
     "/materials/items",
     "/materials/batches",
+    "/materials/categories",
+    "/materials/links",
     "/material-sizes",
     "/locations",
     "/export",
@@ -268,9 +284,49 @@ export async function saveMaterialAction(formData: FormData) {
   redirect("/materials/items");
 }
 
+export async function saveMaterialCategoryAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const name = text(formData, "name");
+  if (!name) redirect("/materials/categories?error=name");
+  try {
+    await upsertMaterialCategory({
+      name,
+      sortOrder: numberField(formData, "sortOrder"),
+    }, id || undefined);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/categories?error=${encodeURIComponent(reason)}`);
+  }
+  revalidateApp();
+  redirect("/materials/categories");
+}
+
+export async function deleteMaterialCategoryAction(formData: FormData) {
+  await requireAuth();
+  try {
+    await deleteMaterialCategory(text(formData, "id"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/categories?error=${encodeURIComponent(reason)}`);
+  }
+  revalidateApp();
+  redirect("/materials/categories");
+}
+
 function materialLocationStatus(formData: FormData) {
   const status = text(formData, "status");
   return (["active", "used_up", "inactive"].includes(status) ? status : "active") as MaterialLocationStatus;
+}
+
+function inventoryLinkScope(formData: FormData) {
+  const scope = text(formData, "scope");
+  return (scope === "batch" ? "batch" : "material") as InventoryLinkScope;
+}
+
+function inventoryLinkTargetType(formData: FormData) {
+  const targetType = text(formData, "targetType");
+  return (targetType === "batch" ? "batch" : "material") as InventoryLinkTargetType;
 }
 
 export async function updateMaterialLocationStatusAction(formData: FormData) {
@@ -332,6 +388,90 @@ export async function operateBomAction(formData: FormData) {
   }
   revalidateApp();
   redirect(returnTo);
+}
+
+export async function saveInventoryLinkGroupAction(formData: FormData) {
+  await requireAuth();
+  const id = text(formData, "id");
+  const name = text(formData, "name");
+  if (!name) redirect("/materials/links?error=name");
+  const group = await upsertInventoryLinkGroup({
+    id: id || undefined,
+    name,
+    scope: inventoryLinkScope(formData),
+  });
+  revalidateApp();
+  redirect(`/materials/links?edit=${group.id}`);
+}
+
+export async function addInventoryLinkItemAction(formData: FormData) {
+  await requireAuth();
+  const groupId = text(formData, "groupId");
+  const targetType = inventoryLinkTargetType(formData);
+  const targetId = text(formData, "targetId");
+  try {
+    await addInventoryLinkGroupItem({
+      groupId,
+      targetType,
+      materialId: targetType === "material" ? targetId : null,
+      batchId: targetType === "batch" ? targetId : null,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(`/materials/links?edit=${groupId}&error=${encodeURIComponent(reason)}`);
+  }
+  revalidateApp();
+  redirect(`/materials/links?edit=${groupId}`);
+}
+
+export async function removeInventoryLinkItemAction(formData: FormData) {
+  await requireAuth();
+  const groupId = text(formData, "groupId");
+  await removeInventoryLinkGroupItem(text(formData, "id"));
+  revalidateApp();
+  redirect(`/materials/links?edit=${groupId}`);
+}
+
+function indexedLinkedTransferItems(formData: FormData) {
+  const indexes = new Set<number>();
+  for (const key of formData.keys()) {
+    const match = String(key).match(/^items\[(\d+)\]\./);
+    if (match) indexes.add(Number(match[1]));
+  }
+
+  return [...indexes].sort((a, b) => a - b).map((index) => ({
+    targetId: text(formData, `items[${index}].targetId`),
+    targetType: (text(formData, `items[${index}].targetType`) === "batch" ? "batch" : "material") as InventoryLinkTargetType,
+    enabled: bool(formData, `items[${index}].enabled`),
+    quantity: numberField(formData, `items[${index}].quantity`),
+  }));
+}
+
+function appendQuery(url: string, key: string, value: string) {
+  const [path, hash = ""] = url.split("#");
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${key}=${encodeURIComponent(value)}${hash ? `#${hash}` : ""}`;
+}
+
+export async function createLinkedTransferAction(formData: FormData) {
+  await requireAuth();
+  const groupId = text(formData, "groupId");
+  const returnTo = text(formData, "returnTo") || `/materials/batches?linkGroup=${groupId}`;
+  try {
+    await createLinkedTransfer({
+      groupId,
+      fromLocationId: text(formData, "fromLocationId"),
+      toLocationId: text(formData, "toLocationId"),
+      date: text(formData, "date"),
+      remark: text(formData, "remark"),
+      items: indexedLinkedTransferItems(formData),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(appendQuery(returnTo, "linkError", reason));
+  }
+  revalidateApp();
+  redirect(appendQuery(returnTo, "linkedTransfer", "1"));
 }
 
 export async function saveMaterialSizeAction(formData: FormData) {
@@ -403,6 +543,7 @@ export async function saveBatchAction(formData: FormData) {
 
   const input = {
     materialName,
+    materialCategory: text(formData, "materialCategory"),
     materialType: "",
     materialSize: "",
     materialUnit: "",
