@@ -28,6 +28,7 @@ import {
   tasks,
   type Batch,
   type BatchStatus,
+  type BomItem,
   type FixedItem,
   type Location as DbLocation,
   type LocationType,
@@ -74,6 +75,11 @@ type BatchFilters = {
   materialId?: string;
   materialName?: string;
   status?: BatchStatus | "all";
+  supplier?: string;
+};
+
+type BomInventoryFilters = {
+  materialName?: string;
   supplier?: string;
 };
 
@@ -150,6 +156,33 @@ type MaterialSummary = {
   }>;
 };
 
+type BomInventoryChild = {
+  bomId: string;
+  materialId: string;
+  materialName: string;
+  category: string;
+  unit: string;
+  quantityPerParent: number;
+  totalStock: number;
+  activeStock: number;
+  locations: Array<{
+    locationId: string;
+    locationName: string;
+    stock: number;
+    activeStock: number;
+    status: InventoryReplenishState;
+  }>;
+  relatedBatches: InventoryBatchSummary[];
+};
+
+type BomInventoryGroup = {
+  parent: Material;
+  children: BomInventoryChild[];
+  availableQuantity: number;
+  totalChildStock: number;
+  matchedBy: "parent" | "child" | "all";
+};
+
 function compact<T>(items: Array<T | undefined | null | false>) {
   return items.filter(Boolean) as T[];
 }
@@ -169,6 +202,14 @@ export function inferMaterialCategory(name: string) {
 function materialCategory(input: { name: string; category?: string | null }) {
   const manualCategory = input.category?.trim();
   return manualCategory || inferMaterialCategory(input.name.trim());
+}
+
+function normalizeSearch(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function includesSearch(value: string | null | undefined, query: string) {
+  return Boolean(query) && String(value ?? "").toLowerCase().includes(query);
 }
 
 function taskOrderBy(sort?: string) {
@@ -1044,6 +1085,98 @@ export async function deleteBomItem(id: string, parentMaterialId: string) {
   await db.delete(bomItems).where(and(eq(bomItems.id, id), eq(bomItems.parentMaterialId, parentMaterialId)));
 }
 
+async function listBomRowsWithMaterials() {
+  const db = await getDb();
+  const [bomRows, materialItems] = await Promise.all([
+    db.select().from(bomItems),
+    db.select().from(materials),
+  ]);
+  const materialById = new Map(materialItems.map((material) => [material.id, material]));
+
+  return bomRows
+    .map((bom) => ({
+      bom,
+      parent: materialById.get(bom.parentMaterialId) ?? null,
+      child: materialById.get(bom.childMaterialId) ?? null,
+    }))
+    .filter((row): row is {
+      bom: BomItem;
+      parent: Material;
+      child: Material;
+    } => Boolean(row.parent && row.child));
+}
+
+function bomMatchesSearch(row: { parent: Material; child: Material }, query: string) {
+  if (!query) return "all";
+  if (includesSearch(row.parent.name, query) || includesSearch(row.parent.category, query)) return "parent";
+  if (includesSearch(row.child.name, query) || includesSearch(row.child.category, query)) return "child";
+  return null;
+}
+
+export async function getBomInventoryGroups(filters: BomInventoryFilters = {}) {
+  const [summary, bomRows] = await Promise.all([buildInventorySummary(), listBomRowsWithMaterials()]);
+  const query = normalizeSearch(filters.materialName);
+  const warehouseQuery = normalizeSearch(filters.supplier);
+  const materialSummaryById = new Map(summary.byMaterial.map((material) => [material.id, material]));
+  const batchRowsByMaterialId = new Map<string, InventoryBatchSummary[]>();
+
+  for (const row of summary.byBatch) {
+    const rows = batchRowsByMaterialId.get(row.batch.materialId) ?? [];
+    rows.push(row);
+    batchRowsByMaterialId.set(row.batch.materialId, rows);
+  }
+
+  const groupMap = new Map<string, BomInventoryGroup>();
+  for (const row of bomRows) {
+    const matchedBy = bomMatchesSearch(row, query);
+    if (query && !matchedBy) continue;
+
+    const childSummary = materialSummaryById.get(row.child.id);
+    const childLocations = (childSummary?.locations ?? [])
+      .filter((location) => (warehouseQuery ? includesSearch(location.locationName, warehouseQuery) : true));
+    if (warehouseQuery && !childLocations.length) continue;
+
+    const quantityPerParent = numberValue(row.bom.quantity);
+    const activeStock = childLocations.reduce((sum, location) => sum + location.activeStock, 0);
+    const child: BomInventoryChild = {
+      bomId: row.bom.id,
+      materialId: row.child.id,
+      materialName: row.child.name,
+      category: row.child.category,
+      unit: row.child.unit,
+      quantityPerParent,
+      totalStock: childLocations.reduce((sum, location) => sum + location.stock, 0),
+      activeStock,
+      locations: childLocations,
+      relatedBatches: batchRowsByMaterialId.get(row.child.id) ?? [],
+    };
+
+    const existing = groupMap.get(row.parent.id);
+    if (existing) {
+      existing.children.push(child);
+      existing.totalChildStock += child.totalStock;
+      existing.availableQuantity = Math.min(
+        existing.availableQuantity,
+        quantityPerParent > 0 ? Math.floor(activeStock / quantityPerParent) : 0,
+      );
+      if (matchedBy === "parent") existing.matchedBy = "parent";
+      else if (existing.matchedBy !== "parent" && matchedBy === "child") existing.matchedBy = "child";
+    } else {
+      groupMap.set(row.parent.id, {
+        parent: row.parent,
+        children: [child],
+        availableQuantity: quantityPerParent > 0 ? Math.floor(activeStock / quantityPerParent) : 0,
+        totalChildStock: child.totalStock,
+        matchedBy: matchedBy ?? "all",
+      });
+    }
+  }
+
+  return [...groupMap.values()]
+    .filter((group) => group.children.length > 0)
+    .sort((a, b) => a.parent.name.localeCompare(b.parent.name, "zh-Hans-CN"));
+}
+
 export async function listMaterials(filters: MaterialFilters = {}) {
   const summary = await buildInventorySummary();
   const search = filters.search?.trim().toLowerCase();
@@ -1228,19 +1361,73 @@ export async function getOrCreateMaterialByName(input: {
 }
 
 export async function listBatches(filters: BatchFilters = {}) {
-  const summary = await buildInventorySummary();
+  const [summary, bomRows] = await Promise.all([buildInventorySummary(), listBomRowsWithMaterials()]);
+  const materialQuery = normalizeSearch(filters.materialName);
+  const supplierQuery = normalizeSearch(filters.supplier);
+  const bomRelatedMaterialIds = new Set<string>();
+
+  if (materialQuery) {
+    for (const row of bomRows) {
+      if (bomMatchesSearch(row, materialQuery)) {
+        bomRelatedMaterialIds.add(row.parent.id);
+        bomRelatedMaterialIds.add(row.child.id);
+      }
+    }
+  }
+
   return summary.byBatch.filter((row) => {
     if (filters.date && String(row.batch.productionDate) !== filters.date) return false;
     if (filters.materialId && row.batch.materialId !== filters.materialId) return false;
-    if (filters.materialName?.trim() && !row.material.name.toLowerCase().includes(filters.materialName.trim().toLowerCase())) {
-      return false;
+    if (materialQuery) {
+      const materialMatch = [
+        row.material.name,
+        row.material.category,
+        row.batch.batchCode,
+        row.batch.supplier,
+        row.initialLocation.name,
+        ...row.stockDistribution.map((stock) => stock.location.name),
+      ].some((value) => includesSearch(value, materialQuery));
+      if (!materialMatch && !bomRelatedMaterialIds.has(row.batch.materialId)) return false;
     }
     if (filters.status && filters.status !== "all" && row.batch.status !== filters.status) return false;
-    if (filters.supplier?.trim() && !row.batch.supplier.toLowerCase().includes(filters.supplier.trim().toLowerCase())) {
-      return false;
+    if (supplierQuery) {
+      const supplierMatch = [
+        row.batch.supplier,
+        row.initialLocation.name,
+        ...row.stockDistribution.map((stock) => stock.location.name),
+      ].some((value) => includesSearch(value, supplierQuery));
+      if (!supplierMatch) return false;
     }
     return true;
   });
+}
+
+function filterBatchesByIds(items: InventoryBatchSummary[], ids: Set<string>) {
+  if (!ids.size) return items;
+  return items.filter((row) => ids.has(row.batch.id));
+}
+
+function batchIdsForBomGroups(groups: BomInventoryGroup[]) {
+  return new Set(groups.flatMap((group) =>
+    group.children.flatMap((child) => child.relatedBatches.map((row) => row.batch.id)),
+  ));
+}
+
+export async function listBatchesWithBomMatches(filters: BatchFilters = {}) {
+  const [batchesResult, bomGroups] = await Promise.all([
+    listBatches(filters),
+    getBomInventoryGroups({ materialName: filters.materialName, supplier: filters.supplier }),
+  ]);
+
+  if (!filters.materialName?.trim()) {
+    return { batches: batchesResult, bomGroups };
+  }
+
+  const relatedBatchIds = batchIdsForBomGroups(bomGroups);
+  return {
+    batches: filterBatchesByIds(batchesResult, relatedBatchIds.size ? relatedBatchIds : new Set()),
+    bomGroups,
+  };
 }
 
 export async function getBatchDetail(id?: string | null) {
@@ -1415,7 +1602,9 @@ async function createMaterialMovement(input: {
     .filter((row) => row.batch.materialId === input.materialId)
     .map((row) => ({
       row,
-      stock: row.stockDistribution.find((item) => item.location.id === input.locationId)?.quantity ?? 0,
+      stock: row.stockDistribution.find((item) => (
+        item.location.id === input.locationId && item.status === "active"
+      ))?.quantity ?? 0,
     }))
     .filter((item) => item.stock > 0)
     .sort((a, b) => String(a.row.batch.productionDate).localeCompare(String(b.row.batch.productionDate)));
@@ -1450,15 +1639,20 @@ export async function operateBom(input: {
   if (!bomRows.length) throw new Error("BOM_EMPTY");
 
   if (input.operation === "inactive") {
-    await Promise.all(
-      bomRows.map((row) =>
+    await Promise.all([
+      setMaterialLocationStatus({
+        materialId: input.parentMaterialId,
+        locationId: input.locationId,
+        status: "inactive",
+      }),
+      ...bomRows.map((row) =>
         setMaterialLocationStatus({
           materialId: row.bom.childMaterialId,
           locationId: input.locationId,
           status: "inactive",
         }),
       ),
-    );
+    ]);
     return;
   }
 
@@ -1471,7 +1665,9 @@ export async function operateBom(input: {
     const availableQuantity = summary.byBatch
       .filter((batchRow) => batchRow.batch.materialId === row.bom.childMaterialId)
       .reduce((sum, batchRow) => (
-        sum + (batchRow.stockDistribution.find((item) => item.location.id === input.locationId)?.quantity ?? 0)
+        sum + (batchRow.stockDistribution.find((item) => (
+          item.location.id === input.locationId && item.status === "active"
+        ))?.quantity ?? 0)
       ), 0);
     if (availableQuantity + 0.0001 < requiredQuantity) throw new Error("INSUFFICIENT_STOCK");
   }
