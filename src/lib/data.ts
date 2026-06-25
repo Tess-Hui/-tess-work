@@ -40,7 +40,6 @@ import {
   type LocationType,
   type Memo,
   type Material,
-  type MaterialCategory,
   type MaterialLocationStatus,
   type MaterialSize,
   type Movement,
@@ -1268,21 +1267,7 @@ export async function listMaterialCategoryItems() {
     .select()
     .from(materialCategories)
     .orderBy(asc(materialCategories.sortOrder), asc(materialCategories.name));
-
-  if (rows.length) return rows;
-
-  const fallback = await db
-    .selectDistinct({ category: materials.category })
-    .from(materials)
-    .orderBy(asc(materials.category));
-  return fallback
-    .map((row, index) => ({
-      id: row.category,
-      name: row.category,
-      sortOrder: index,
-      createdAt: new Date(),
-    }))
-    .filter((row) => Boolean(row.name)) as MaterialCategory[];
+  return rows;
 }
 
 export async function upsertMaterialCategory(input: {

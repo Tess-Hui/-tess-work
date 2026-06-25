@@ -316,7 +316,8 @@ async function runDatabaseInit() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "inventory_link_group_items_group_batch_idx" ON "inventory_link_group_items" USING btree ("group_id", "batch_id");`;
   await sql`
     INSERT INTO "material_categories" ("name", "sort_order")
-    VALUES
+    SELECT *
+    FROM (VALUES
       ('贺卡', 10),
       ('彩盒', 20),
       ('标签类', 30),
@@ -326,6 +327,8 @@ async function runDatabaseInit() {
       ('配件', 70),
       ('其他', 90),
       ('未分类', 100)
+    ) AS defaults("name", "sort_order")
+    WHERE NOT EXISTS (SELECT 1 FROM "material_categories")
     ON CONFLICT ("name") DO NOTHING;
   `;
   await sql`
@@ -333,6 +336,7 @@ async function runDatabaseInit() {
     SELECT DISTINCT "category", 80
     FROM "materials"
     WHERE COALESCE(NULLIF("category", ''), '') <> ''
+      AND NOT EXISTS (SELECT 1 FROM "material_categories")
     ON CONFLICT ("name") DO NOTHING;
   `;
   await sql`
@@ -463,7 +467,8 @@ async function runDatabaseCompatibilityPatch() {
     await sql`CREATE INDEX IF NOT EXISTS "material_categories_sort_idx" ON "material_categories" USING btree ("sort_order");`;
     await sql`
       INSERT INTO "material_categories" ("name", "sort_order")
-      VALUES
+      SELECT *
+      FROM (VALUES
         ('贺卡', 10),
         ('彩盒', 20),
         ('标签类', 30),
@@ -473,6 +478,8 @@ async function runDatabaseCompatibilityPatch() {
         ('配件', 70),
         ('其他', 90),
         ('未分类', 100)
+      ) AS defaults("name", "sort_order")
+      WHERE NOT EXISTS (SELECT 1 FROM "material_categories")
       ON CONFLICT ("name") DO NOTHING;
     `;
     await sql`
@@ -480,6 +487,7 @@ async function runDatabaseCompatibilityPatch() {
       SELECT DISTINCT "category", 80
       FROM "materials"
       WHERE COALESCE(NULLIF("category", ''), '') <> ''
+        AND NOT EXISTS (SELECT 1 FROM "material_categories")
       ON CONFLICT ("name") DO NOTHING;
     `;
   }
