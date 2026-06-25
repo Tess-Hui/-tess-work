@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   index,
+  integer,
   numeric,
   pgEnum,
   pgTable,
@@ -172,6 +173,22 @@ export const materialSizes = pgTable(
   ],
 );
 
+export const materialCategories = pgTable(
+  "material_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("material_categories_name_idx").on(table.name),
+    index("material_categories_sort_idx").on(table.sortOrder),
+  ],
+);
+
 export const locations = pgTable(
   "locations",
   {
@@ -292,6 +309,47 @@ export const bomItems = pgTable(
   ],
 );
 
+export const inventoryLinkGroups = pgTable(
+  "inventory_link_groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    scope: text("scope").notNull().default("material"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("inventory_link_groups_scope_idx").on(table.scope),
+    index("inventory_link_groups_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const inventoryLinkGroupItems = pgTable(
+  "inventory_link_group_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => inventoryLinkGroups.id),
+    targetType: text("target_type").notNull().default("material"),
+    materialId: uuid("material_id").references(() => materials.id),
+    batchId: uuid("batch_id").references(() => batches.id),
+    sortOrder: integer("sort_order").notNull().default(0),
+    defaultEnabled: boolean("default_enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("inventory_link_group_items_group_idx").on(table.groupId),
+    index("inventory_link_group_items_material_idx").on(table.materialId),
+    index("inventory_link_group_items_batch_idx").on(table.batchId),
+    uniqueIndex("inventory_link_group_items_group_material_idx").on(table.groupId, table.materialId),
+    uniqueIndex("inventory_link_group_items_group_batch_idx").on(table.groupId, table.batchId),
+  ],
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type FixedItem = typeof fixedItems.$inferSelect;
@@ -299,14 +357,19 @@ export type Reminder = typeof reminders.$inferSelect;
 export type Memo = typeof memos.$inferSelect;
 export type Material = typeof materials.$inferSelect;
 export type MaterialSize = typeof materialSizes.$inferSelect;
+export type MaterialCategory = typeof materialCategories.$inferSelect;
 export type Batch = typeof batches.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Movement = typeof movements.$inferSelect;
 export type MaterialLocationState = typeof materialLocationStates.$inferSelect;
 export type BomItem = typeof bomItems.$inferSelect;
+export type InventoryLinkGroup = typeof inventoryLinkGroups.$inferSelect;
+export type InventoryLinkGroupItem = typeof inventoryLinkGroupItems.$inferSelect;
 export type Priority = "high" | "medium" | "low";
 export type TaskStatus = "todo" | "completed" | "trashed";
 export type BatchStatus = "active" | "used_up" | "inactive";
 export type MaterialLocationStatus = "active" | "used_up" | "inactive";
 export type LocationType = "warehouse" | "factory" | "other";
 export type MovementType = "OUT" | "TRANSFER" | "RETURN" | "SCRAP" | "CONSUME" | "STOCK_IN";
+export type InventoryLinkScope = "material" | "batch";
+export type InventoryLinkTargetType = "material" | "batch";
