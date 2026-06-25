@@ -138,6 +138,7 @@ export async function MaterialManager({ searchParams }: { searchParams: Params }
       {editing || searchParams.new === "1" ? (
         <MaterialForm
           material={editing}
+          categories={categories}
           materials={allMaterials}
           warehouses={warehouses}
           bomRows={bomRows}
@@ -203,12 +204,14 @@ export async function MaterialManager({ searchParams }: { searchParams: Params }
 
 function MaterialForm({
   material,
+  categories,
   materials,
   warehouses,
   bomRows,
   bomError,
 }: {
   material: Awaited<ReturnType<typeof getMaterialById>>;
+  categories: Awaited<ReturnType<typeof listMaterialCategories>>;
   materials: Awaited<ReturnType<typeof listMaterials>>;
   warehouses: Awaited<ReturnType<typeof listWarehouseLocations>>;
   bomRows: Awaited<ReturnType<typeof listBomItems>>;
@@ -231,7 +234,11 @@ function MaterialForm({
               <Input name="type" defaultValue={material?.type} />
             </Field>
             <Field label="物料大类">
-              <Input name="category" defaultValue={material?.category} placeholder="留空则按名称自动识别" />
+              <Select name="category" defaultValue={material?.category || "未分类"}>
+                {[...new Set([material?.category, ...categories, "未分类"].filter(Boolean))].map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </Select>
             </Field>
             <Field label="物料尺寸">
               <Input name="size" defaultValue={material?.size} />
