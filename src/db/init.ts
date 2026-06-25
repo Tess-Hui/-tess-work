@@ -161,6 +161,15 @@ async function runDatabaseInit() {
   `;
 
   await sql`
+    CREATE TABLE IF NOT EXISTS "material_categories" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "name" text NOT NULL,
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS "locations" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "name" text NOT NULL,
@@ -242,6 +251,28 @@ async function runDatabaseInit() {
     );
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS "inventory_link_groups" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "name" text NOT NULL,
+      "scope" text DEFAULT 'material' NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS "inventory_link_group_items" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "group_id" uuid NOT NULL REFERENCES "inventory_link_groups"("id"),
+      "target_type" text DEFAULT 'material' NOT NULL,
+      "material_id" uuid REFERENCES "materials"("id"),
+      "batch_id" uuid REFERENCES "batches"("id"),
+      "sort_order" integer DEFAULT 0 NOT NULL,
+      "default_enabled" boolean DEFAULT true NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+  `;
+
   await sql`CREATE INDEX IF NOT EXISTS "tasks_status_idx" ON "tasks" USING btree ("status");`;
   await sql`CREATE INDEX IF NOT EXISTS "tasks_priority_idx" ON "tasks" USING btree ("priority");`;
   await sql`CREATE INDEX IF NOT EXISTS "tasks_planned_at_idx" ON "tasks" USING btree ("planned_at");`;
@@ -255,6 +286,8 @@ async function runDatabaseInit() {
   await sql`CREATE INDEX IF NOT EXISTS "materials_category_idx" ON "materials" USING btree ("category");`;
   await sql`CREATE INDEX IF NOT EXISTS "materials_type_idx" ON "materials" USING btree ("type");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_sizes_name_idx" ON "material_sizes" USING btree ("name");`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_categories_name_idx" ON "material_categories" USING btree ("name");`;
+  await sql`CREATE INDEX IF NOT EXISTS "material_categories_sort_idx" ON "material_categories" USING btree ("sort_order");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "locations_name_idx" ON "locations" USING btree ("name");`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "batches_code_idx" ON "batches" USING btree ("batch_code");`;
   await sql`CREATE INDEX IF NOT EXISTS "batches_material_idx" ON "batches" USING btree ("material_id");`;
@@ -274,6 +307,34 @@ async function runDatabaseInit() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS "bom_items_parent_child_idx" ON "bom_items" USING btree ("parent_material_id", "child_material_id");`;
   await sql`CREATE INDEX IF NOT EXISTS "bom_items_parent_idx" ON "bom_items" USING btree ("parent_material_id");`;
   await sql`CREATE INDEX IF NOT EXISTS "bom_items_child_idx" ON "bom_items" USING btree ("child_material_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "inventory_link_groups_scope_idx" ON "inventory_link_groups" USING btree ("scope");`;
+  await sql`CREATE INDEX IF NOT EXISTS "inventory_link_groups_created_at_idx" ON "inventory_link_groups" USING btree ("created_at");`;
+  await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_group_idx" ON "inventory_link_group_items" USING btree ("group_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_material_idx" ON "inventory_link_group_items" USING btree ("material_id");`;
+  await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_batch_idx" ON "inventory_link_group_items" USING btree ("batch_id");`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "inventory_link_group_items_group_material_idx" ON "inventory_link_group_items" USING btree ("group_id", "material_id");`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "inventory_link_group_items_group_batch_idx" ON "inventory_link_group_items" USING btree ("group_id", "batch_id");`;
+  await sql`
+    INSERT INTO "material_categories" ("name", "sort_order")
+    VALUES
+      ('贺卡', 10),
+      ('彩盒', 20),
+      ('标签类', 30),
+      ('说明书', 40),
+      ('贴纸', 50),
+      ('包装袋', 60),
+      ('配件', 70),
+      ('其他', 90),
+      ('未分类', 100)
+    ON CONFLICT ("name") DO NOTHING;
+  `;
+  await sql`
+    INSERT INTO "material_categories" ("name", "sort_order")
+    SELECT DISTINCT "category", 80
+    FROM "materials"
+    WHERE COALESCE(NULLIF("category", ''), '') <> ''
+    ON CONFLICT ("name") DO NOTHING;
+  `;
   await sql`
     INSERT INTO "locations" ("name", "type")
     VALUES ('自己仓', 'warehouse')
@@ -386,6 +447,73 @@ async function runDatabaseCompatibilityPatch() {
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS "bom_items_parent_child_idx" ON "bom_items" USING btree ("parent_material_id", "child_material_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "bom_items_parent_idx" ON "bom_items" USING btree ("parent_material_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "bom_items_child_idx" ON "bom_items" USING btree ("child_material_id");`;
+  }
+
+  if (materialsTableState?.tableName) {
+    await sql`
+      CREATE TABLE IF NOT EXISTS "material_categories" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "name" text NOT NULL,
+        "sort_order" integer DEFAULT 0 NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "material_categories_name_idx" ON "material_categories" USING btree ("name");`;
+    await sql`CREATE INDEX IF NOT EXISTS "material_categories_sort_idx" ON "material_categories" USING btree ("sort_order");`;
+    await sql`
+      INSERT INTO "material_categories" ("name", "sort_order")
+      VALUES
+        ('贺卡', 10),
+        ('彩盒', 20),
+        ('标签类', 30),
+        ('说明书', 40),
+        ('贴纸', 50),
+        ('包装袋', 60),
+        ('配件', 70),
+        ('其他', 90),
+        ('未分类', 100)
+      ON CONFLICT ("name") DO NOTHING;
+    `;
+    await sql`
+      INSERT INTO "material_categories" ("name", "sort_order")
+      SELECT DISTINCT "category", 80
+      FROM "materials"
+      WHERE COALESCE(NULLIF("category", ''), '') <> ''
+      ON CONFLICT ("name") DO NOTHING;
+    `;
+  }
+
+  if (materialsTableState?.tableName && batchesTableState?.tableName) {
+    await sql`
+      CREATE TABLE IF NOT EXISTS "inventory_link_groups" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "name" text NOT NULL,
+        "scope" text DEFAULT 'material' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "inventory_link_group_items" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "group_id" uuid NOT NULL REFERENCES "inventory_link_groups"("id"),
+        "target_type" text DEFAULT 'material' NOT NULL,
+        "material_id" uuid REFERENCES "materials"("id"),
+        "batch_id" uuid REFERENCES "batches"("id"),
+        "sort_order" integer DEFAULT 0 NOT NULL,
+        "default_enabled" boolean DEFAULT true NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+
+    await sql`CREATE INDEX IF NOT EXISTS "inventory_link_groups_scope_idx" ON "inventory_link_groups" USING btree ("scope");`;
+    await sql`CREATE INDEX IF NOT EXISTS "inventory_link_groups_created_at_idx" ON "inventory_link_groups" USING btree ("created_at");`;
+    await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_group_idx" ON "inventory_link_group_items" USING btree ("group_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_material_idx" ON "inventory_link_group_items" USING btree ("material_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "inventory_link_group_items_batch_idx" ON "inventory_link_group_items" USING btree ("batch_id");`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "inventory_link_group_items_group_material_idx" ON "inventory_link_group_items" USING btree ("group_id", "material_id");`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "inventory_link_group_items_group_batch_idx" ON "inventory_link_group_items" USING btree ("group_id", "batch_id");`;
   }
 }
 
