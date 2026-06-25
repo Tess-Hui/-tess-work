@@ -38,8 +38,7 @@ export function MobileNav() {
             <div className="shrink-0 border-b border-slate-200 bg-white/95 p-4 backdrop-blur">
               <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-950">Tess Work Manager</p>
-                <p className="text-xs text-slate-500">Mobile menu</p>
+                <p className="text-sm font-semibold text-slate-950">Tess 工作台</p>
               </div>
               <Button
                 type="button"
@@ -71,9 +70,6 @@ export function MobileNav() {
                     <Icon className={cn("h-5 w-5 shrink-0", active ? "text-white" : "text-slate-500")} />
                     <span className={cn("min-w-0 flex-1", active ? "text-white" : "text-slate-900")}>
                       {item.label}
-                    </span>
-                    <span className={cn("ml-auto text-xs", active ? "text-slate-200" : "text-slate-400")}>
-                      {item.sub}
                     </span>
                   </Link>
                 );

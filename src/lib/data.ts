@@ -1325,12 +1325,10 @@ export async function deleteMaterialCategory(id: string) {
     .limit(1);
   if (!category) return;
 
-  const [{ value }] = await db
-    .select({ value: count() })
-    .from(materials)
+  await db
+    .update(materials)
+    .set({ category: "未分类" })
     .where(eq(materials.category, category.name));
-  if (value > 0) throw new Error("CATEGORY_IN_USE");
-
   await db.delete(materialCategories).where(eq(materialCategories.id, id));
 }
 

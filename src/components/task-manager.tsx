@@ -203,11 +203,11 @@ function TaskForm({ task }: { task: Task | null }) {
             <Textarea name="content" defaultValue={task?.content} required />
           </Field>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="计划完成时间 Planned due">
+            <Field label="计划完成时间">
               <Input name="plannedAt" type="datetime-local" defaultValue={toDateTimeInput(task?.plannedAt)} />
             </Field>
             {showCompletedAt ? (
-              <Field label="实际完成时间 Completed at">
+              <Field label="实际完成时间">
                 <Input
                   name="completedAt"
                   type="datetime-local"

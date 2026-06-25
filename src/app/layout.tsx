@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tess Work Manager",
-  description: "Personal work management dashboard for Tess.",
+  title: "Tess 工作台",
+  description: "Tess 工作管理系统。",
 };
 
 export default function RootLayout({

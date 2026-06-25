@@ -27,7 +27,7 @@ export default async function LoginPage({
             <LockKeyhole className="h-6 w-6" />
           </div>
           <CardTitle className="text-xl">Tess 工作管理登录</CardTitle>
-          <p className="text-sm text-slate-500">Private cloud workspace · Admin only</p>
+          <p className="text-sm text-slate-500">私人云端工作台</p>
         </CardHeader>
         <CardContent>
           {params.error ? (
@@ -36,10 +36,10 @@ export default async function LoginPage({
             </div>
           ) : null}
           <form action={loginAction} className="grid gap-4">
-            <Field label="用户名 Username">
+            <Field label="用户名">
               <Input name="username" defaultValue="Tess" autoComplete="username" required />
             </Field>
-            <Field label="密码 Password">
+            <Field label="密码">
               <Input
                 name="password"
                 type="password"

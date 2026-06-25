@@ -17,7 +17,6 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="sticky top-0 hidden h-screen border-r border-slate-200 bg-white/85 px-4 py-5 backdrop-blur md:block">
         <Link href="/dashboard" className="mb-6 block rounded-md px-2">
           <p className="text-lg font-semibold text-slate-950">Tess 工作台</p>
-          <p className="text-xs text-slate-500">Personal Admin</p>
         </Link>
         <nav className="grid gap-1">
           {navItems.map((item) => {
@@ -30,7 +29,6 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="h-4 w-4" />
                 <span>{item.label}</span>
-                <span className="ml-auto text-xs text-slate-400">{item.sub}</span>
               </Link>
             );
           })}
@@ -46,15 +44,15 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <div className="min-w-0">
         <header className="sticky top-0 z-40 flex min-h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur md:px-8">
           <div>
-            <p className="text-sm font-semibold text-slate-950">Tess Work Manager</p>
-            <p className="text-xs text-slate-500">云端同步 · Responsive Admin</p>
+            <p className="text-sm font-semibold text-slate-950">Tess 工作台</p>
+            <p className="text-xs text-slate-500">云端同步</p>
           </div>
           <div className="flex items-center gap-2">
             <MobileNav />
             <form action={logoutAction} className="hidden md:block">
               <Button variant="ghost" size="sm">
                 <LogOut className="h-4 w-4" />
-                Logout
+                退出登录
               </Button>
             </form>
           </div>

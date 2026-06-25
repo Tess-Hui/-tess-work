@@ -78,7 +78,10 @@ export async function MaterialCategoryManager({ searchParams }: { searchParams: 
                   </Button>
                   <form action={deleteMaterialCategoryAction}>
                     <input type="hidden" name="id" value={category.id} />
-                    <ConfirmDeleteButton />
+                    <ConfirmDeleteButton
+                      title="确定要删除这个分类吗？"
+                      description="删除后，使用该分类的物料会改为未分类；批次、库存和流转记录都会保留。"
+                    />
                   </form>
                 </div>
               </CardContent>

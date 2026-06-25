@@ -311,8 +311,23 @@ function LinkedTransferPanel({
                       {item.batchCode ? <span className="ml-2 text-sm font-normal text-slate-500">{item.batchCode}</span> : null}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      当前进行中库存：{item.activeStock.toFixed(2)} {item.unit}
+                      当前进行中总库存：{item.activeStock.toFixed(2)} {item.unit}
                     </p>
+                    {item.locations.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {item.locations.map((location) => (
+                          <span
+                            key={location.locationId}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          >
+                            {location.locationName}：{location.stock.toFixed(2)} {item.unit}
+                            {location.status !== "active" ? `（${statusLabels[location.status]}）` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">暂无仓库库存分布。</p>
+                    )}
                   </div>
                   <Field label="本次调货数量">
                     <Input name={`items[${index}].quantity`} type="number" min="0" step="0.01" defaultValue="0" />
@@ -458,7 +473,12 @@ function BatchFilters({
     <Card>
       <CardContent className="pt-5">
         <div className="mb-3 flex flex-wrap gap-2">
-          <Button asChild size="sm" variant={!searchParams.category ? "default" : "secondary"}>
+          <Button
+            asChild
+            size="sm"
+            variant="secondary"
+            className={!searchParams.category ? "bg-slate-950 text-white hover:bg-slate-800 [&_*]:text-white" : ""}
+          >
             <Link href="/materials/batches">全部分类</Link>
           </Button>
           {categories.slice(0, 8).map((category) => (
@@ -466,7 +486,8 @@ function BatchFilters({
               key={category}
               asChild
               size="sm"
-              variant={searchParams.category === category ? "default" : "secondary"}
+              variant="secondary"
+              className={searchParams.category === category ? "bg-slate-950 text-white hover:bg-slate-800 [&_*]:text-white" : ""}
             >
               <Link href={`/materials/batches?category=${encodeURIComponent(category)}`}>{category}</Link>
             </Button>

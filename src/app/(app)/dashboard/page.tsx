@@ -42,7 +42,7 @@ export default async function DashboardPage() {
     <div className="grid gap-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-950">首页总览 Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-slate-950">首页总览</h1>
           <p className="mt-1 text-sm text-slate-500">一进入系统即可查看今天最重要的内容。</p>
         </div>
         <Button asChild>
