@@ -8,6 +8,8 @@ import {
   Package,
   Pin,
   Ruler,
+  Link2,
+  Tags,
   Trash2,
 } from "lucide-react";
 
@@ -20,6 +22,8 @@ export const navItems = [
   { href: "/reminders", label: "提醒事项", sub: "Reminders", icon: Bell },
   { href: "/memos", label: "备忘录", sub: "Memos", icon: NotebookText },
   { href: "/materials", label: "物料管理", sub: "Materials", icon: Package },
+  { href: "/materials/links", label: "物料联动组", sub: "Links", icon: Link2 },
+  { href: "/materials/categories", label: "物料分类", sub: "Categories", icon: Tags },
   { href: "/material-sizes", label: "物料尺寸管理", sub: "Sizes", icon: Ruler },
   { href: "/export", label: "导出", sub: "Export", icon: Download },
 ];
