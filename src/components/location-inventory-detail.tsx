@@ -28,9 +28,16 @@ const statusClasses = {
   inactive: "border-slate-200 bg-slate-50 text-slate-600",
 } as const;
 
+const statusBarClasses = {
+  active: "bg-emerald-500",
+  used_up: "bg-slate-400",
+  inactive: "bg-slate-400",
+} as const;
+
 export async function LocationInventoryDetail({ id }: { id: string }) {
   const detail = await getLocationInventoryDetail(id);
   if (!detail) notFound();
+  const maxQuantity = Math.max(...detail.detailRows.map((row) => row.quantity), 1);
 
   return (
     <div className="grid gap-5">
@@ -90,6 +97,18 @@ export async function LocationInventoryDetail({ id }: { id: string }) {
                           {statusLabels[row.status]}
                         </Badge>
                       </p>
+                    </div>
+                    <div className="mt-3">
+                      <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                        <span>库存占比</span>
+                        <span className="font-medium text-slate-900">{formatInventoryNumber(row.quantity)}</span>
+                      </div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${statusBarClasses[row.status]}`}
+                          style={{ width: `${row.quantity > 0 ? Math.max((row.quantity / maxQuantity) * 100, 2) : 0}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="grid gap-2">
