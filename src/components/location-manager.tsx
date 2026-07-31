@@ -160,7 +160,7 @@ function FilterButton({
     <Button asChild variant={active ? "default" : "secondary"} size="sm">
       <Link
         href={href}
-        className={active ? "text-white hover:text-white focus:text-white" : "text-slate-900"}
+        className={active ? "!text-white hover:!text-white focus:!text-white" : "text-slate-900"}
       >
         {children}
       </Link>

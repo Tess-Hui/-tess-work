@@ -790,7 +790,7 @@ function BatchFilters({
             asChild
             size="sm"
             variant="secondary"
-            className={!searchParams.category ? "bg-slate-950 text-white hover:bg-slate-800 [&_*]:text-white" : ""}
+            className={!searchParams.category ? "bg-slate-950 !text-white hover:bg-slate-800 hover:!text-white [&_*]:!text-white" : ""}
           >
             <Link href="/materials/batches">全部分类</Link>
           </Button>
@@ -800,7 +800,7 @@ function BatchFilters({
               asChild
               size="sm"
               variant="secondary"
-              className={searchParams.category === category ? "bg-slate-950 text-white hover:bg-slate-800 [&_*]:text-white" : ""}
+              className={searchParams.category === category ? "bg-slate-950 !text-white hover:bg-slate-800 hover:!text-white [&_*]:!text-white" : ""}
             >
               <Link href={`/materials/batches?category=${encodeURIComponent(category)}`}>{category}</Link>
             </Button>

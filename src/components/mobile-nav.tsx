@@ -63,12 +63,12 @@ export function MobileNav() {
                     className={cn(
                       "flex min-h-12 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                       active
-                        ? "bg-slate-950 text-white hover:bg-slate-950 hover:text-white [&_svg]:text-white"
+                        ? "bg-slate-950 !text-white hover:bg-slate-950 hover:!text-white [&_*]:!text-white"
                         : "bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-950",
                     )}
                   >
-                    <Icon className={cn("h-5 w-5 shrink-0", active ? "text-white" : "text-slate-500")} />
-                    <span className={cn("min-w-0 flex-1", active ? "text-white" : "text-slate-900")}>
+                    <Icon className={cn("h-5 w-5 shrink-0", active ? "!text-white" : "text-slate-500")} />
+                    <span className={cn("min-w-0 flex-1", active ? "!text-white" : "text-slate-900")}>
                       {item.label}
                     </span>
                   </Link>
