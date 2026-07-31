@@ -1540,6 +1540,13 @@ export async function listInventoryLinkGroups() {
       defaultEnabled: boolean;
       activeStock: number;
       locations: Array<{ locationId: string; locationName: string; stock: number; status: MaterialLocationStatus }>;
+      batches: Array<{
+        id: string;
+        batchCode: string;
+        productionDate: string;
+        status: BatchStatus;
+        currentRemaining: number;
+      }>;
     }>;
   }>();
 
@@ -1578,6 +1585,20 @@ export async function listInventoryLinkGroups() {
         stock: location.stock,
         status: location.status,
       })) ?? [];
+    const batchesForItem = summary.byBatch
+      .filter((batchRow) => batchRow.batch.materialId === material.id)
+      .map((batchRow) => ({
+        id: batchRow.batch.id,
+        batchCode: batchRow.batch.batchCode,
+        productionDate: String(batchRow.batch.productionDate),
+        status: batchRow.batch.status,
+        currentRemaining: batchRow.currentRemaining,
+      }))
+      .sort((a, b) => {
+        const activeSort = Number(b.status === "active") - Number(a.status === "active");
+        if (activeSort !== 0) return activeSort;
+        return b.productionDate.localeCompare(a.productionDate);
+      });
 
     group.items.push({
       id: row.item.id,
@@ -1594,6 +1615,7 @@ export async function listInventoryLinkGroups() {
         sum + (location.status === "active" ? location.stock : 0)
       ), 0),
       locations: locationsForItem,
+      batches: batchesForItem,
     });
   }
 
@@ -1780,6 +1802,141 @@ export async function createLinkedTransfer(input: {
   }
 }
 
+export async function createLinkedStockIn(input: {
+  groupId: string;
+  toLocationId: string;
+  date: string;
+  remark: string;
+  items: Array<{
+    targetId: string;
+    targetType: InventoryLinkTargetType;
+    batchId?: string | null;
+    enabled: boolean;
+    quantity: number;
+    totalPrice: number;
+  }>;
+}) {
+  if (!input.toLocationId) throw new Error("LOCATION_REQUIRED");
+
+  const group = await getInventoryLinkGroupDetail(input.groupId);
+  if (!group) throw new Error("GROUP_NOT_FOUND");
+
+  const enabledItems = input.items
+    .filter((item) => item.enabled)
+    .map((item) => ({
+      ...item,
+      targetType: normalizeInventoryLinkTargetType(item.targetType),
+      batchId: item.targetType === "batch" ? item.targetId : item.batchId,
+    }));
+  if (!enabledItems.length) throw new Error("NO_ITEMS");
+
+  for (const item of enabledItems) {
+    if (item.quantity <= 0) throw new Error("INVALID_QUANTITY");
+    if (item.totalPrice < 0) throw new Error("INVALID_PRICE");
+    if (!item.batchId) throw new Error("BATCH_REQUIRED");
+  }
+
+  const db = await getDb();
+  const selectedBatchIds = [...new Set(enabledItems.map((item) => item.batchId).filter((id): id is string => Boolean(id)))];
+  const batchRows = selectedBatchIds.length
+    ? await db.select().from(batches).where(inArray(batches.id, selectedBatchIds))
+    : [];
+  const batchById = new Map(batchRows.map((batch) => [batch.id, batch]));
+
+  for (const item of enabledItems) {
+    const groupItem = group.items.find((row) => (
+      row.targetId === item.targetId && row.targetType === item.targetType
+    ));
+    if (!groupItem) throw new Error("ITEM_NOT_IN_GROUP");
+    const batch = item.batchId ? batchById.get(item.batchId) : null;
+    if (!batch) throw new Error("BATCH_NOT_FOUND");
+    if (batch.materialId !== groupItem.materialId) throw new Error("BATCH_MATERIAL_MISMATCH");
+  }
+
+  for (const item of enabledItems) {
+    await createMovement({
+      batchId: item.batchId ?? "",
+      date: input.date,
+      type: "STOCK_IN",
+      toLocationId: input.toLocationId,
+      quantity: item.quantity,
+      totalPrice: item.totalPrice,
+      remark: input.remark || `联动组入库：${group.name}`,
+    });
+  }
+}
+
+export async function createLinkedStockOut(input: {
+  groupId: string;
+  fromLocationId: string;
+  date: string;
+  remark: string;
+  operation: "consume" | "return";
+  items: Array<{
+    targetId: string;
+    targetType: InventoryLinkTargetType;
+    enabled: boolean;
+    quantity: number;
+  }>;
+}) {
+  if (!input.fromLocationId) throw new Error("LOCATION_REQUIRED");
+
+  const group = await getInventoryLinkGroupDetail(input.groupId);
+  if (!group) throw new Error("GROUP_NOT_FOUND");
+
+  const enabledItems = input.items
+    .filter((item) => item.enabled && item.quantity > 0)
+    .map((item) => ({
+      ...item,
+      targetType: normalizeInventoryLinkTargetType(item.targetType),
+    }));
+  if (!enabledItems.length) throw new Error("NO_ITEMS");
+
+  const summary = await getInventorySummary();
+  for (const item of enabledItems) {
+    const groupItem = group.items.find((row) => row.targetId === item.targetId && row.targetType === item.targetType);
+    if (!groupItem) throw new Error("ITEM_NOT_IN_GROUP");
+    const available = item.targetType === "batch"
+      ? summary.byBatch
+        .find((row) => row.batch.id === item.targetId)
+        ?.stockDistribution.find((stock) => (
+          stock.location.id === input.fromLocationId && stock.status === "active"
+        ))?.quantity ?? 0
+      : summary.byBatch
+        .filter((row) => row.batch.materialId === item.targetId)
+        .reduce((sum, row) => (
+          sum + (row.stockDistribution.find((stock) => (
+            stock.location.id === input.fromLocationId && stock.status === "active"
+          ))?.quantity ?? 0)
+        ), 0);
+    if (available + 0.0001 < item.quantity) throw new Error("INSUFFICIENT_STOCK");
+  }
+
+  const movementType = input.operation === "return" ? "RETURN" : "CONSUME";
+  const remarkPrefix = input.operation === "return" ? "联动组退回" : "联动组扣减";
+  for (const item of enabledItems) {
+    if (item.targetType === "batch") {
+      await createMovement({
+        batchId: item.targetId,
+        date: input.date,
+        type: movementType,
+        fromLocationId: input.fromLocationId,
+        quantity: item.quantity,
+        remark: input.remark || `${remarkPrefix}：${group.name}`,
+      });
+    } else {
+      await createMaterialMovement({
+        materialId: item.targetId,
+        locationId: input.fromLocationId,
+        quantity: item.quantity,
+        type: movementType,
+        remark: input.remark || `${remarkPrefix}：${group.name}`,
+        date: input.date,
+      });
+    }
+  }
+}
+
 export async function getBatchDetail(id?: string | null) {
   if (!id) return null;
   const [summary, locationItems] = await Promise.all([getInventorySummary(), listLocations()]);
@@ -1949,7 +2106,7 @@ async function createMaterialMovement(input: {
   locationId: string;
   toLocationId?: string | null;
   quantity: number;
-  type: "CONSUME" | "TRANSFER";
+  type: "CONSUME" | "TRANSFER" | "RETURN";
   remark: string;
   date?: string;
 }) {

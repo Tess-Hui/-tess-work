@@ -43,7 +43,7 @@ export async function InventoryLinkManager({ searchParams }: { searchParams: Par
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-950">物料联动组</h1>
-          <p className="mt-1 text-sm text-slate-500">把需要一起调货的物料先链接成组，再到物料总库存里直接联动调货。</p>
+          <p className="mt-1 text-sm text-slate-500">把需要一起操作的物料先链接成组，再到物料总库存里直接联动处理。</p>
         </div>
         <Button asChild variant="outline">
           <Link href="/materials/batches">返回物料总库存</Link>

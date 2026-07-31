@@ -12,7 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { InventoryItemBars, formatInventoryNumber } from "@/components/inventory-item-bars";
-import { createLinkedTransferAction, deleteBatchAction, operateBomAction, saveBatchAction } from "@/lib/actions";
+import {
+  createLinkedStockInAction,
+  createLinkedStockOutAction,
+  createLinkedTransferAction,
+  deleteBatchAction,
+  operateBomAction,
+  saveBatchAction,
+} from "@/lib/actions";
 import { getShanghaiDateString } from "@/lib/dates";
 import {
   getBatchDetail,
@@ -36,9 +43,15 @@ type Params = {
   deleted?: string;
   bomError?: string;
   linkGroup?: string;
+  linkMode?: string;
   linkError?: string;
   linkedTransfer?: string;
+  linkedStockIn?: string;
+  linkedConsume?: string;
+  linkedReturn?: string;
 };
+
+type LinkMode = "transfer" | "stockIn" | "consume" | "return";
 
 const statusLabels = {
   active: "进行中",
@@ -72,6 +85,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
   const linkGroupBadges = await getInventoryLinkBadgesForBatches(items);
   const showBomGroups = Boolean(searchParams.materialName?.trim() && batchData.bomGroups.length);
   const returnTo = batchReturnHref(searchParams);
+  const selectedLinkMode = normalizeLinkMode(searchParams.linkMode);
 
   return (
     <div className="grid gap-5">
@@ -104,7 +118,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       {searchParams.linkError ? (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="p-4 text-sm text-red-700">
-            联动调货失败：{linkErrorMessage(searchParams.linkError)}
+            联动操作失败：{linkErrorMessage(searchParams.linkError)}
           </CardContent>
         </Card>
       ) : null}
@@ -112,6 +126,24 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       {searchParams.linkedTransfer === "1" ? (
         <Card className="border-emerald-200 bg-emerald-50">
           <CardContent className="p-4 text-sm text-emerald-700">联动调货已完成。</CardContent>
+        </Card>
+      ) : null}
+
+      {searchParams.linkedStockIn === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">联动进货已完成。</CardContent>
+        </Card>
+      ) : null}
+
+      {searchParams.linkedConsume === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">联动扣减库存已完成。</CardContent>
+        </Card>
+      ) : null}
+
+      {searchParams.linkedReturn === "1" ? (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-4 text-sm text-emerald-700">联动退回已完成。</CardContent>
         </Card>
       ) : null}
 
@@ -133,10 +165,11 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
       ) : null}
 
       {selectedLinkGroup ? (
-        <LinkedTransferPanel
+        <LinkedOperationPanel
           group={selectedLinkGroup}
           warehouses={warehouseItems}
-          returnTo={returnToWithLinkGroup(returnTo, selectedLinkGroup.id)}
+          mode={selectedLinkMode}
+          baseReturnTo={returnTo}
         />
       ) : null}
 
@@ -193,7 +226,7 @@ export async function BatchManager({ searchParams }: { searchParams: Params }) {
                     <Button asChild variant="secondary" size="sm">
                       <Link href={batchLinkGroupHref(searchParams, linkGroupBadges.get(row.batch.id)?.[0]?.id ?? "")}>
                         <Link2 className="h-4 w-4" />
-                        联动调货
+                        联动
                       </Link>
                     </Button>
                   ) : null}
@@ -230,13 +263,28 @@ function batchReturnHref(searchParams: Params) {
   return query ? `/materials/batches?${query}` : "/materials/batches";
 }
 
-function returnToWithLinkGroup(returnTo: string, groupId: string) {
-  const separator = returnTo.includes("?") ? "&" : "?";
-  return `${returnTo}${separator}linkGroup=${groupId}`;
+function normalizeLinkMode(mode?: string): LinkMode {
+  if (mode === "stockIn" || mode === "consume" || mode === "return") return mode;
+  return "transfer";
 }
 
-function batchLinkGroupHref(searchParams: Params, groupId: string) {
-  return returnToWithLinkGroup(batchReturnHref(searchParams), groupId);
+function linkModeLabel(mode: LinkMode) {
+  const labels = {
+    transfer: "联动调货",
+    stockIn: "联动进货",
+    consume: "联动扣减库存",
+    return: "联动退回",
+  };
+  return labels[mode];
+}
+
+function returnToWithLinkGroup(returnTo: string, groupId: string, mode: LinkMode = "transfer") {
+  const separator = returnTo.includes("?") ? "&" : "?";
+  return `${returnTo}${separator}linkGroup=${groupId}&linkMode=${mode}`;
+}
+
+function batchLinkGroupHref(searchParams: Params, groupId: string, mode: LinkMode = "transfer") {
+  return returnToWithLinkGroup(batchReturnHref(searchParams), groupId, mode);
 }
 
 function linkErrorMessage(reason: string) {
@@ -246,8 +294,65 @@ function linkErrorMessage(reason: string) {
     SAME_LOCATION: "来源仓库和目标仓库不能相同。",
     NO_ITEMS: "请至少勾选一个项目并填写数量。",
     ITEM_NOT_IN_GROUP: "项目不属于当前联动组。",
+    BATCH_REQUIRED: "请选择本次入库对应的批次。",
+    BATCH_NOT_FOUND: "没有找到本次入库对应的批次。",
+    BATCH_MATERIAL_MISMATCH: "选择的批次和联动项目不匹配。",
+    INVALID_QUANTITY: "请填写大于 0 的数量。",
+    INVALID_PRICE: "金额不能小于 0。",
   };
   return labels[reason] ?? "请检查仓库、数量和组内项目。";
+}
+
+function LinkedOperationPanel({
+  group,
+  warehouses,
+  mode,
+  baseReturnTo,
+}: {
+  group: NonNullable<Awaited<ReturnType<typeof getInventoryLinkGroupDetail>>>;
+  warehouses: Awaited<ReturnType<typeof listWarehouseLocations>>;
+  mode: LinkMode;
+  baseReturnTo: string;
+}) {
+  const returnTo = returnToWithLinkGroup(baseReturnTo, group.id, mode);
+  const modes: LinkMode[] = ["transfer", "stockIn", "consume", "return"];
+
+  return (
+    <section className="grid gap-3" id="linked-operation">
+      <Card className="border-sky-200">
+        <CardHeader>
+          <CardTitle>联动：{group.name}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {modes.map((item) => (
+            <Button
+              key={item}
+              asChild
+              variant={item === mode ? "default" : "secondary"}
+              size="sm"
+            >
+              <Link href={returnToWithLinkGroup(baseReturnTo, group.id, item)}>
+                {linkModeLabel(item)}
+              </Link>
+            </Button>
+          ))}
+          <Button asChild variant="outline" size="sm">
+            <Link href="/materials/links">维护联动组</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {mode === "transfer" ? (
+        <LinkedTransferPanel group={group} warehouses={warehouses} returnTo={returnTo} />
+      ) : null}
+      {mode === "stockIn" ? (
+        <LinkedStockInPanel group={group} warehouses={warehouses} returnTo={returnTo} />
+      ) : null}
+      {mode === "consume" || mode === "return" ? (
+        <LinkedStockOutPanel group={group} warehouses={warehouses} returnTo={returnTo} mode={mode} />
+      ) : null}
+    </section>
+  );
 }
 
 function LinkedTransferPanel({
@@ -346,6 +451,214 @@ function LinkedTransferPanel({
           </Field>
           <div className="flex flex-col gap-2 sm:flex-row">
             <SubmitButton variant="secondary">执行整组调货</SubmitButton>
+            <Button asChild variant="outline">
+              <Link href="/materials/links">维护联动组</Link>
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinkedStockInPanel({
+  group,
+  warehouses,
+  returnTo,
+}: {
+  group: NonNullable<Awaited<ReturnType<typeof getInventoryLinkGroupDetail>>>;
+  warehouses: Awaited<ReturnType<typeof listWarehouseLocations>>;
+  returnTo: string;
+}) {
+  return (
+    <Card className="border-emerald-200" id="linked-stock-in">
+      <CardHeader>
+        <CardTitle>联动进货：{group.name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form action={createLinkedStockInAction} className="grid gap-4">
+          <input type="hidden" name="groupId" value={group.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="入库日期">
+              <Input name="date" type="date" defaultValue={getShanghaiDateString()} required />
+            </Field>
+            <Field label="目标仓库">
+              <Select name="toLocationId" required>
+                <option value="">选择入库仓库</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <div className="grid gap-2">
+            {group.items.length ? (
+              group.items.map((item, index) => (
+                <div key={item.id} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[auto_1fr_0.75fr_0.55fr_0.55fr] lg:items-center">
+                  <input type="hidden" name={`items[${index}].targetId`} value={item.targetId} />
+                  <input type="hidden" name={`items[${index}].targetType`} value={item.targetType} />
+                  {item.targetType === "batch" ? (
+                    <input type="hidden" name={`items[${index}].batchId`} value={item.targetId} />
+                  ) : null}
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      name={`items[${index}].enabled`}
+                      defaultChecked={item.defaultEnabled}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    参与
+                  </label>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950">
+                      {item.name}
+                      {item.batchCode ? <span className="ml-2 text-sm font-normal text-slate-500">{item.batchCode}</span> : null}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      当前进行中总库存：{item.activeStock.toFixed(2)} {item.unit}
+                    </p>
+                  </div>
+                  <Field label="入库批次">
+                    {item.targetType === "batch" ? (
+                      <Input value={item.batchCode ?? item.name} readOnly />
+                    ) : (
+                      <Select name={`items[${index}].batchId`} required defaultValue={item.batches[0]?.id ?? ""}>
+                        <option value="">选择批次</option>
+                        {item.batches.map((batch) => (
+                          <option key={batch.id} value={batch.id}>
+                            {batch.batchCode} · {batch.currentRemaining.toFixed(2)}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                  <Field label="本次入库数量">
+                    <Input name={`items[${index}].quantity`} type="number" min="0" step="0.01" defaultValue="0" />
+                  </Field>
+                  <Field label="金额">
+                    <Input name={`items[${index}].movementTotalPrice`} type="number" min="0" step="0.01" placeholder="金额" defaultValue="0" />
+                  </Field>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-500">
+                这个联动组还没有组内项目，请先到物料联动组页面添加。
+              </p>
+            )}
+          </div>
+
+          <Field label="备注">
+            <Textarea name="remark" placeholder="可填写这次入库说明" />
+          </Field>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SubmitButton variant="secondary">执行联动入库</SubmitButton>
+            <Button asChild variant="outline">
+              <Link href="/materials/links">维护联动组</Link>
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinkedStockOutPanel({
+  group,
+  warehouses,
+  returnTo,
+  mode,
+}: {
+  group: NonNullable<Awaited<ReturnType<typeof getInventoryLinkGroupDetail>>>;
+  warehouses: Awaited<ReturnType<typeof listWarehouseLocations>>;
+  returnTo: string;
+  mode: "consume" | "return";
+}) {
+  const title = mode === "return" ? "联动退回" : "联动扣减库存";
+  const locationLabel = mode === "return" ? "退回来源仓库" : "扣减仓库";
+  const locationPlaceholder = mode === "return" ? "从哪个仓库退回" : "从哪个仓库扣减";
+
+  return (
+    <Card className="border-amber-200" id={`linked-${mode}`}>
+      <CardHeader>
+        <CardTitle>{title}：{group.name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form action={createLinkedStockOutAction} className="grid gap-4">
+          <input type="hidden" name="groupId" value={group.id} />
+          <input type="hidden" name="operation" value={mode} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="日期">
+              <Input name="date" type="date" defaultValue={getShanghaiDateString()} required />
+            </Field>
+            <Field label={locationLabel}>
+              <Select name="fromLocationId" required>
+                <option value="">{locationPlaceholder}</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <div className="grid gap-2">
+            {group.items.length ? (
+              group.items.map((item, index) => (
+                <div key={item.id} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-[auto_1fr_0.6fr] md:items-center">
+                  <input type="hidden" name={`items[${index}].targetId`} value={item.targetId} />
+                  <input type="hidden" name={`items[${index}].targetType`} value={item.targetType} />
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      name={`items[${index}].enabled`}
+                      defaultChecked={item.defaultEnabled}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    参与
+                  </label>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950">
+                      {item.name}
+                      {item.batchCode ? <span className="ml-2 text-sm font-normal text-slate-500">{item.batchCode}</span> : null}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      当前进行中总库存：{item.activeStock.toFixed(2)} {item.unit}
+                    </p>
+                    {item.locations.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {item.locations.map((location) => (
+                          <span
+                            key={location.locationId}
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                          >
+                            {location.locationName}：{location.stock.toFixed(2)} {item.unit}
+                            {location.status !== "active" ? `（${statusLabels[location.status]}）` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">暂无仓库库存分布。</p>
+                    )}
+                  </div>
+                  <Field label={mode === "return" ? "本次退回数量" : "本次扣减数量"}>
+                    <Input name={`items[${index}].quantity`} type="number" min="0" step="0.01" defaultValue="0" />
+                  </Field>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-500">
+                这个联动组还没有组内项目，请先到物料联动组页面添加。
+              </p>
+            )}
+          </div>
+
+          <Field label="备注">
+            <Textarea name="remark" placeholder={mode === "return" ? "可填写这次退回说明" : "可填写这次扣减说明"} />
+          </Field>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SubmitButton variant="secondary">执行{title}</SubmitButton>
             <Button asChild variant="outline">
               <Link href="/materials/links">维护联动组</Link>
             </Button>

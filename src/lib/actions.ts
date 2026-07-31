@@ -15,6 +15,8 @@ import type {
 import {
   addInventoryLinkGroupItem,
   createBatch,
+  createLinkedStockIn,
+  createLinkedStockOut,
   createLinkedTransfer,
   createMovement,
   deleteBomItem,
@@ -447,6 +449,23 @@ function indexedLinkedTransferItems(formData: FormData) {
   }));
 }
 
+function indexedLinkedStockInItems(formData: FormData) {
+  const indexes = new Set<number>();
+  for (const key of formData.keys()) {
+    const match = String(key).match(/^items\[(\d+)\]\./);
+    if (match) indexes.add(Number(match[1]));
+  }
+
+  return [...indexes].sort((a, b) => a - b).map((index) => ({
+    targetId: text(formData, `items[${index}].targetId`),
+    targetType: (text(formData, `items[${index}].targetType`) === "batch" ? "batch" : "material") as InventoryLinkTargetType,
+    batchId: text(formData, `items[${index}].batchId`),
+    enabled: bool(formData, `items[${index}].enabled`),
+    quantity: numberField(formData, `items[${index}].quantity`),
+    totalPrice: numberField(formData, `items[${index}].movementTotalPrice`),
+  }));
+}
+
 function appendQuery(url: string, key: string, value: string) {
   const [path, hash = ""] = url.split("#");
   const separator = path.includes("?") ? "&" : "?";
@@ -472,6 +491,48 @@ export async function createLinkedTransferAction(formData: FormData) {
   }
   revalidateApp();
   redirect(appendQuery(returnTo, "linkedTransfer", "1"));
+}
+
+export async function createLinkedStockInAction(formData: FormData) {
+  await requireAuth();
+  const groupId = text(formData, "groupId");
+  const returnTo = text(formData, "returnTo") || `/materials/batches?linkGroup=${groupId}&linkMode=stockIn`;
+  try {
+    await createLinkedStockIn({
+      groupId,
+      toLocationId: text(formData, "toLocationId"),
+      date: text(formData, "date"),
+      remark: text(formData, "remark"),
+      items: indexedLinkedStockInItems(formData),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(appendQuery(returnTo, "linkError", reason));
+  }
+  revalidateApp();
+  redirect(appendQuery(returnTo, "linkedStockIn", "1"));
+}
+
+export async function createLinkedStockOutAction(formData: FormData) {
+  await requireAuth();
+  const groupId = text(formData, "groupId");
+  const operation = text(formData, "operation") === "return" ? "return" : "consume";
+  const returnTo = text(formData, "returnTo") || `/materials/batches?linkGroup=${groupId}&linkMode=${operation}`;
+  try {
+    await createLinkedStockOut({
+      groupId,
+      fromLocationId: text(formData, "fromLocationId"),
+      date: text(formData, "date"),
+      remark: text(formData, "remark"),
+      operation,
+      items: indexedLinkedTransferItems(formData),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "failed";
+    redirect(appendQuery(returnTo, "linkError", reason));
+  }
+  revalidateApp();
+  redirect(appendQuery(returnTo, operation === "return" ? "linkedReturn" : "linkedConsume", "1"));
 }
 
 export async function saveMaterialSizeAction(formData: FormData) {
